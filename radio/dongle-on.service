@@ -1,0 +1,9 @@
+[Unit]
+Description=Power the RTL-SDR USB port ON and start AIS-catcher (duty cycle)
+
+[Service]
+Type=oneshot
+# Pi 5: one 5V switch feeds all four sockets, so every onboard hub is switched together.
+ExecStart=-/bin/sh -c 'for h in 1 2 3 4; do /usr/sbin/uhubctl -l $h -a on; done'
+ExecStart=/bin/sleep 6
+ExecStart=/bin/systemctl start ais-catcher

@@ -1,0 +1,10 @@
+[Unit]
+Description=AIS message-rate health + recovery watchdog
+After=ais-catcher.service
+
+[Service]
+Type=oneshot
+User=mark
+EnvironmentFile=-/home/mark/.config/passing-ships/watch.env
+ExecStart=/home/mark/ais-watch.sh
+TimeoutStartSec=300

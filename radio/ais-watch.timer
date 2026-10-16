@@ -1,0 +1,9 @@
+[Unit]
+Description=Run ais-watch during the listen window (:37, :47, :57)
+
+[Timer]
+OnCalendar=*:37,47,57
+Persistent=false
+
+[Install]
+WantedBy=timers.target

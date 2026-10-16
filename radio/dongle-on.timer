@@ -1,0 +1,9 @@
+[Unit]
+Description=Dongle ON at :30 each hour (35 min listen window before the :00 paint)
+
+[Timer]
+OnCalendar=*:30:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

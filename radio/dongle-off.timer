@@ -1,0 +1,9 @@
+[Unit]
+Description=Dongle OFF at :05 each hour (25 min unpowered cool-down)
+
+[Timer]
+OnCalendar=*:05:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

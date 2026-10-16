@@ -1,0 +1,9 @@
+[Unit]
+Description=Stop AIS-catcher and cut 5V to the RTL-SDR USB port (cooling rest)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl stop ais-catcher
+ExecStart=/bin/sleep 2
+# Pi 5: 5V drops only when EVERY onboard port is off (uhubctl README), so switch them all.
+ExecStart=-/bin/sh -c 'for h in 1 2 3 4; do /usr/sbin/uhubctl -l $h -a off; done'
