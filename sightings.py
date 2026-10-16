@@ -21,6 +21,7 @@ HOME_LAT, HOME_LON = config.LAT, config.LON  # default: the Sea Ranch bluff
 LOG_RANGE_NMI = config.MAX_RANGE_NMI           # ducted skip is not a passer
 MAX_AGE_S = 20 * 60                            # stale positions ignored
 KEEP_DAYS = 14
+MAX_ARCHIVE = 5000                             # ships remembered at once; the oldest go first
 # what a ship says about herself (AIS messages 5 / 24), as opposed to where she is
 STATIC_KEYS = ("shipname", "callsign", "imo", "shiptype", "to_bow", "to_stern",
                "to_port", "to_starboard", "draught", "destination", "country",
@@ -53,15 +54,15 @@ def nmi(lat, lon):
 def main():
     now = datetime.datetime.now()
     stamp = now.isoformat(timespec="seconds")
+    import curator                      # shared feed reader and category(), so both agree
     try:
-        d = json.load(urllib.request.urlopen(AIS_URL, timeout=15))
+        ships = curator.read_feed()
     except Exception as e:
         print(f"{stamp}  no AIS feed ({e})"); return
-    import curator                      # shared category() so names agree
     arch = load()
     wx = None
     seen = 0
-    for s in map(curator.clean_record, d.get("ships", [])):
+    for s in map(curator.clean_record, ships):
         if not s or s["lat"] is None or s["lon"] is None:
             continue
         mmsi = str(s["mmsi"])
@@ -110,6 +111,8 @@ def main():
     # prune the old
     cutoff = (now - datetime.timedelta(days=KEEP_DAYS)).isoformat(timespec="seconds")
     for k in [k for k, v in arch.items() if v.get("last_seen", "") < cutoff]:
+        del arch[k]
+    for k in sorted(arch, key=lambda k: arch[k].get("last_seen", ""))[:max(0, len(arch) - MAX_ARCHIVE)]:
         del arch[k]
     save(arch)
     print(f"{stamp}  logged {seen} in range; archive holds {len(arch)}")

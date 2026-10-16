@@ -314,6 +314,23 @@ check("health: a forged log line is flattened and cut", _health({"verdict": "DEA
 check("health: a silly streak is no opinion", [_health({"weak_streak": w})["weak_streak"] for w in ("9", 10 ** 9, -1, True, None, 6.5)], [0] * 6)
 check("health: not a dict, not JSON, nobody home", [_health([1, 2]), _health(b"<html>"), _health(b"")], [{}, {}, {}])
 
+# ---------- the ship feed is bounded, and only named fields are kept ----------
+def _feed(body):
+    _ur.urlopen = lambda *a, **k: io.BytesIO(body if isinstance(body, bytes) else json.dumps(body).encode())
+    try: return curator.read_feed()
+    except Exception as e: return type(e).__name__
+    finally: _ur.urlopen = _real_open
+check("feed: an ordinary feed comes through", _feed({"ships": [{"mmsi": 1}, {"mmsi": 2}]}), [{"mmsi": 1}, {"mmsi": 2}])
+check("feed: too many ships are cut, not swallowed", len(_feed({"ships": [{"mmsi": i} for i in range(curator.MAX_SHIPS + 500)]})), curator.MAX_SHIPS)
+check("feed: an endless body is refused", _feed(b'{"ships": [' + b" " * (curator.MAX_FEED_BYTES + 10) + b"]}"), "ValueError")
+check("feed: wrong shapes are an empty sea, not a crash", [_feed([1]), _feed({"ships": "x"}), _feed({"ships": {"a": 1}}), _feed({})], [[], [], [], []])
+_r = curator.clean_record({"mmsi": "367000001", "shipname": "OK", "callsign": "WDL1234EXTRA\n", "draught": "7.5", "imo": 9301122,
+                           "status": True, "junk": "A" * 10 ** 6, "nested": {"a": [1] * 1000}, "eta_day": "soon"})
+check("record: fields nobody named do not ride along", sorted(set(_r) - set(curator._NUMBERS)), ["callsign", "country", "destination", "mmsi", "shipname"])
+check("record: kept fields are cleaned", (_r["callsign"], _r["draught"], _r["imo"], _r["status"], _r["eta_day"]), ("WDL1234", 7.5, 9301122, None, None))
+check("record: small enough to save", len(json.dumps(_r)) < 600, True)
+check("record: the painters' extras still work", curator.extras(_r), {"draught_m": 7.5, "imo": 9301122})
+
 # ---------- a missing font must not cost the painting ----------
 art_directions._FONT_CANDIDATES = [("/nonexistent/%s.ttf", "B", "R", 0, 0)]
 check("no font on the machine -> PIL's built-in face, not a crash", art_directions.helv(12) is not None, True)

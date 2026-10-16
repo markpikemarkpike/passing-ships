@@ -48,7 +48,10 @@ def save_state(st):
 
 US_MIDS = ("303", "338", "366", "367", "368", "369")
 _NUMBERS = ("lat", "lon", "heading", "cog", "speed", "shiptype", "to_bow", "to_stern",
-            "last_signal")
+            "last_signal", "to_port", "to_starboard", "draught", "status", "imo",
+            "eta_month", "eta_day", "eta_hour", "eta_minute")
+MAX_FEED_BYTES = 4 * 1024 * 1024     # a busy night is a few hundred ships, well under 1 MB
+MAX_SHIPS = 2000
 
 
 def tidy(raw, limit=20):
@@ -59,6 +62,18 @@ def tidy(raw, limit=20):
         return ""
     s = "".join(ch if ch.isprintable() else " " for ch in raw)
     return " ".join(s.split())[:limit].strip()
+
+
+def read_feed():
+    """ships.json from the radio Pi, as a list of raw records. Bounded in bytes and in
+    ships: the frame is a small computer, and whoever answers at that address decides
+    how much it is asked to swallow. Raises if there is no usable feed."""
+    raw = urllib.request.urlopen(AIS_URL, timeout=15).read(MAX_FEED_BYTES + 1)
+    if len(raw) > MAX_FEED_BYTES:
+        raise ValueError("feed is over %d bytes" % MAX_FEED_BYTES)
+    d = json.loads(raw)
+    ships = d.get("ships") if isinstance(d, dict) else None
+    return ships[:MAX_SHIPS] if isinstance(ships, list) else []
 
 
 def read_health():
@@ -79,12 +94,13 @@ def read_health():
 def clean_record(s):
     """One ship from ships.json with every field the type the rest of the code
     assumes, or None if she has no usable MMSI. A field that is not what it
-    should be becomes None (= she isn't saying). The curator and the sightings
-    logger both read the feed through this, so one malformed record costs one
-    ship, never the hourly paint."""
+    should be becomes None (= she isn't saying). Only the fields named here come
+    through: records are saved to the card, so nothing unexpected rides along. The
+    curator and the sightings logger both read the feed through this, so one
+    malformed record costs one ship, never the hourly paint."""
     if not isinstance(s, dict):
         return None
-    s = dict(s)
+    s = {k: s.get(k) for k in ("mmsi", "shipname", "destination", "country", "callsign") + _NUMBERS}
     try:
         s["mmsi"] = int(s.get("mmsi") or 0)
     except (TypeError, ValueError, OverflowError):
@@ -103,7 +119,7 @@ def clean_record(s):
         s[k] = v if v is not None and v == v and abs(v) != float("inf") else None
     s["shiptype"] = int(s["shiptype"]) if s["shiptype"] is not None else None
     s["shipname"], s["destination"] = tidy(s.get("shipname")), tidy(s.get("destination"))
-    s["country"] = tidy(s.get("country"), 2)
+    s["country"], s["callsign"] = tidy(s.get("country"), 2), tidy(s.get("callsign"), 7)
     return s
 
 
@@ -395,8 +411,7 @@ def main(aside=()):
     # after a replug). Either way the wall says so instead of quietly repainting.
     radio_note = None
     try:
-        d = json.load(urllib.request.urlopen(AIS_URL, timeout=15))
-        live = d.get("ships", [])
+        live = read_feed()
         st["feed_down_since"] = None
     except Exception as e:
         log(f"no AIS feed ({e}); painting from the archive")

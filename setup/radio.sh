@@ -33,12 +33,16 @@ sudo apt-get install -y -qq python3 uhubctl rtl-sdr librtlsdr-dev cmake build-es
 
 echo "== AIS-catcher (GPL-3.0, separate program, jvde-github)"
 if ! command -v AIS-catcher >/dev/null; then
-  AC_REF="v0.70"   # pinned; bump deliberately after testing
+  AC_REF=8833c64b3da0c42e9a724b9bd13eaab2fffadcca   # v0.70. A commit, not the tag: a tag can be moved. Bump deliberately after testing.
   # One compiler per core wants more memory than a small Pi has, and the kernel
   # ends the build by killing it. Slower beats dead.
   MEM_MB=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
   JOBS=$(nproc); [ "$MEM_MB" -lt 3000 ] && JOBS=2; [ "$MEM_MB" -lt 900 ] && JOBS=1
-  tmp=$(mktemp -d); git clone -q --depth 1 --branch "$AC_REF" https://github.com/jvde-github/AIS-catcher "$tmp/ac"
+  tmp=$(mktemp -d); git init -q "$tmp/ac"
+  git -C "$tmp/ac" remote add origin https://github.com/jvde-github/AIS-catcher
+  git -C "$tmp/ac" fetch -q --depth 1 origin "$AC_REF"
+  git -C "$tmp/ac" checkout -q FETCH_HEAD
+  [ "$(git -C "$tmp/ac" rev-parse HEAD)" = "$AC_REF" ] || { echo "radio.sh: did not get the pinned AIS-catcher commit"; exit 1; }
   (cd "$tmp/ac" && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release >/dev/null && make -j"$JOBS" >/dev/null && sudo make install >/dev/null)
   rm -rf "$tmp"
 fi
