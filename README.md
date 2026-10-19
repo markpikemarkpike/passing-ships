@@ -226,7 +226,7 @@ The curator has a variety rule: never the same ship twice in three days, favor t
 
 ## Security and privacy
 
-The frame reads a public radio band and a public buoy. It sends nothing anywhere, unless you turn on `--share`. Ship names come straight off the air from strangers, so they're treated as untrusted input everywhere they're drawn. If you hang one in a rental with guests on the wifi, keep other credentials off both Pis.
+The frame reads a public radio band and a public buoy. The code here sends nothing anywhere, unless you turn on `--share`. My own frame runs a few extras that aren't in this repo, including one that posts a painting a day to [pacificpike.com/ships](https://pacificpike.com/ships/). Yours won't. Ship names come straight off the air from strangers, so they're treated as untrusted input everywhere they're drawn. If you hang one in a rental with guests on the wifi, keep other credentials off both Pis.
 
 ## License and credits
 
