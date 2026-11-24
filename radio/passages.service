@@ -1,0 +1,10 @@
+[Unit]
+Description=The radio's own diary of passing ships
+After=ais-catcher.service
+
+[Service]
+Type=oneshot
+User=mark
+EnvironmentFile=-/home/mark/.config/passing-ships/watch.env
+ExecStart=/usr/bin/python3 /home/mark/passages.py
+TimeoutStartSec=60

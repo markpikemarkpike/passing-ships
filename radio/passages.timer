@@ -1,0 +1,10 @@
+[Unit]
+Description=Look at the sea every 2 minutes
+
+[Timer]
+OnCalendar=*:0/2:20
+AccuracySec=10s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

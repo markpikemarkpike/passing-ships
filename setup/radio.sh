@@ -119,10 +119,12 @@ DUTY_CYCLE=$DUTY
 REBOOT_AFTER_H=$([ "$POD" = 1 ] && echo 8 || echo 0)
 NET_REBOOT_AFTER_MIN=$([ "$POD" = 1 ] && echo 120 || echo 0)
 EOF
+[ "$DAISY" = 1 ] && echo "BANNER=dAISy" >> "$CONF/watch.env"     # lets the watchdog tell a dead board from a quiet sea
 mkdir -p "$H/status"
+install -m 755 "$DEST/radio/passages.py" "$H/passages.py"
 install -m 755 "$DEST/radio/ais-watch.sh" "$H/ais-watch.sh"
 sed -i "s#/home/mark#$H#g" "$H/ais-watch.sh"
-for f in ais-watch.service ais-watch.timer; do
+for f in ais-watch.service ais-watch.timer passages.service passages.timer; do
   sed "s#/home/mark#$H#g; s#User=mark#User=$U#" "$DEST/radio/$f" | sudo tee /etc/systemd/system/$f >/dev/null
 done
 # health.json for the frame (curator reads :8101/health.json)
@@ -142,7 +144,7 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable ais-catcher health-server ais-watch.timer
+sudo systemctl enable ais-catcher health-server ais-watch.timer passages.timer
 
 if [ "$DUTY" = 1 ]; then
   echo "== dongle duty cycle (35 min on / 25 min off, for cheap-dongle heat)"

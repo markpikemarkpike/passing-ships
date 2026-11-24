@@ -51,6 +51,87 @@ def nmi(lat, lon):
     return 3440.0 * math.acos(min(1.0, max(-1.0, c)))
 
 
+RUN = os.path.join(STATE_DIR, "sightings-run.json")     # when this last ran: a gap is a power cut
+GAP_MIN = 20
+
+
+def passages(day, timeout=10):
+    """One day of the radio's own diary (radio/passages.py), {} if it has none."""
+    import re, curator
+    url = re.sub(r":8100/.*$", ":8101/passages/%s.json" % day, AIS_URL)
+    try:
+        raw = urllib.request.urlopen(url, timeout=timeout).read(curator.MAX_FEED_BYTES + 1)
+        d = json.loads(raw) if len(raw) <= curator.MAX_FEED_BYTES else None
+    except Exception:
+        return None                             # no answer, which is not the same as an empty sea
+    return d if isinstance(d, dict) else None
+
+
+def entry(e):
+    """One diary entry, every field checked: it came over the network."""
+    import curator
+    if not isinstance(e, dict):
+        return None
+    def one(x):
+        rec = curator.clean_record(x.get("record")) if isinstance(x, dict) else None
+        d, at = (x.get("nmi"), x.get("at")) if isinstance(x, dict) else (None, None)
+        try:
+            datetime.datetime.fromisoformat(at)
+        except (TypeError, ValueError):
+            return None
+        if not rec or isinstance(d, bool) or not isinstance(d, (int, float)) or not 0 <= d <= LOG_RANGE_NMI:
+            return None
+        return dict(nmi=round(float(d), 1), at=at[:19], record=rec)
+    near, day = one(e), one(e.get("day"))
+    if not near:
+        return None
+    last = e.get("last") if isinstance(e.get("last"), str) else near["at"]
+    first = e.get("first") if isinstance(e.get("first"), str) else near["at"]
+    return dict(near=near, day=day, first=first[:19], last=last[:19])
+
+
+def catch_up(arch, since, now, weather_at):
+    """The frame was off: read the hours it missed out of the radio's diary."""
+    import curator
+    added, d = 0, since.date()
+    while d <= now.date():
+        for e in filter(None, map(entry, (passages(d.isoformat()) or {}).values())):
+            rec = e["near"]["record"]
+            mmsi = str(rec["mmsi"])
+            old = arch.get(mmsi)
+            if old and (old.get("closest_nmi") or 1e9) <= e["near"]["nmi"] and old.get("last_seen", "") >= e["near"]["at"][:13]:
+                continue
+            if e["last"] < since.isoformat() and old:
+                continue
+            cat, label = curator.category(rec)
+            a = arch[mmsi] = dict(old or {}, mmsi=rec["mmsi"], name=rec["shipname"] or (old or {}).get("name"),
+                                  category=cat, label=label, record=rec, closest_nmi=e["near"]["nmi"],
+                                  closest_at=e["near"]["at"], wx=weather_at(e["near"]["at"]))
+            a.setdefault("first_seen", e["first"])
+            a["last_seen"] = max(e["last"], (old or {}).get("last_seen", ""))
+            a.pop("day", None)
+            if e["day"]:
+                a["day"] = dict(e["day"], wx=weather_at(e["day"]["at"]))
+            added += 1
+        d += datetime.timedelta(days=1)
+    return added
+
+
+def weather_then():
+    """weather.fetch for past moments, one request per station per run."""
+    import weather
+    got = {}
+    def at(iso):
+        hour = iso[:13]
+        if hour not in got:
+            try:
+                got[hour] = weather.fetch(timeout=15, at=iso)
+            except Exception:
+                got[hour] = None
+        return got[hour]
+    return at
+
+
 def main():
     now = datetime.datetime.now()
     stamp = now.isoformat(timespec="seconds")
@@ -60,6 +141,17 @@ def main():
     except Exception as e:
         print(f"{stamp}  no AIS feed ({e})"); return
     arch = load()
+    try:
+        ran = datetime.datetime.fromisoformat(json.load(open(RUN))["at"])
+    except Exception:
+        ran = None
+    if ran and (now - ran).total_seconds() > GAP_MIN * 60:
+        since = max(ran, now - datetime.timedelta(days=KEEP_DAYS))
+        try:
+            print("%s  back after %.1f h: %d ships from the radio's diary" % (
+                stamp, (now - ran).total_seconds() / 3600.0, catch_up(arch, since, now, weather_then())))
+        except Exception as ex:
+            print(f"{stamp}  catch-up failed ({ex})")
     wx = None
     seen = 0
     for s in map(curator.clean_record, ships):
@@ -108,6 +200,24 @@ def main():
             e["record"] = new
             if wx:
                 e["wx"] = wx
+        # ...and from her closest in daylight, if she passes in the night as well
+        import light
+        lit = light.for_iso(now)["name"] != "night"
+        old = e.get("day") if isinstance(e.get("day"), dict) else None
+        if old and old.get("at", "") < (now - datetime.timedelta(days=curator.SOURCE_DAYS)).isoformat():
+            old = None                # a daylight view from an earlier voyage is not this one
+        if lit and (old is None or dist < old["nmi"]):
+            if wx is None:
+                try:
+                    import weather
+                    wx = weather.fetch(timeout=8)
+                except Exception:
+                    wx = None
+            e["day"] = dict(nmi=round(dist, 1), at=stamp, record=dict(s), **({"wx": wx} if wx else {}))
+        for r_ in (e["day"]["record"],) if e.get("day") else ():
+            for k in STATIC_KEYS:
+                if r_.get(k) in (None, "", 0) and (e.get("record") or {}).get(k) not in (None, "", 0):
+                    r_[k] = e["record"][k]
     # prune the old
     cutoff = (now - datetime.timedelta(days=KEEP_DAYS)).isoformat(timespec="seconds")
     for k in [k for k, v in arch.items() if v.get("last_seen", "") < cutoff]:
@@ -115,6 +225,9 @@ def main():
     for k in sorted(arch, key=lambda k: arch[k].get("last_seen", ""))[:max(0, len(arch) - MAX_ARCHIVE)]:
         del arch[k]
     save(arch)
+    with open(RUN + ".tmp", "w") as f:
+        json.dump({"at": stamp}, f)
+    os.replace(RUN + ".tmp", RUN)
     print(f"{stamp}  logged {seen} in range; archive holds {len(arch)}")
 
 

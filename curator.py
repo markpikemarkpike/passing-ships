@@ -64,6 +64,15 @@ def tidy(raw, limit=20):
     return " ".join(s.split())[:limit].strip()
 
 
+def real_name(raw):
+    """Her name, or "" when the packet was garbled ('DEYUM*>V8Q49', Nov 2026): a ship
+    with no name waits for a clean packet, and they come every six minutes."""
+    s = " ".join(tidy(raw).replace("_", " ").split())
+    if any(ch in "<>*^\\[]{}=;|~`" for ch in s) or not any(ch.isalnum() for ch in s):
+        return ""
+    return s
+
+
 def read_feed():
     """ships.json from the radio Pi, as a list of raw records. Bounded in bytes and in
     ships: the frame is a small computer, and whoever answers at that address decides
@@ -77,7 +86,7 @@ def read_feed():
 
 
 def read_health():
-    """The radio Pi's own verdict on its antenna, every field checked before use.
+    """The radio Pi's own verdict on itself, every field checked before use.
     It arrives over the network like the ship feed does, so it gets the same
     treatment. {} = no opinion (server absent, or not saying anything sensible)."""
     try:
@@ -86,9 +95,10 @@ def read_health():
         return {}
     if not isinstance(h, dict):
         return {}
-    weak = h.get("weak_streak")
+    sil = h.get("silent_h")
+    ok = isinstance(sil, (int, float)) and not isinstance(sil, bool) and 0 <= sil <= 9999
     return {"verdict": tidy(h.get("verdict"), 12), "detail": tidy(h.get("detail"), 120),
-            "weak_streak": weak if type(weak) is int and 0 <= weak <= 999 else 0}
+            "silent_h": float(sil) if ok else None}
 
 
 def clean_record(s):
@@ -105,8 +115,8 @@ def clean_record(s):
         s["mmsi"] = int(s.get("mmsi") or 0)
     except (TypeError, ValueError, OverflowError):
         return None
-    if s["mmsi"] <= 0:
-        return None
+    if not 201000000 <= s["mmsi"] <= 775999999:      # ship stations only (ITU country codes run 201-775).
+        return None                                  # Buoys, aircraft and garbled packets fall outside.
     for k in _NUMBERS:
         v = s.get(k)
         if isinstance(v, bool):
@@ -118,7 +128,7 @@ def clean_record(s):
                 v = None
         s[k] = v if v is not None and v == v and abs(v) != float("inf") else None
     s["shiptype"] = int(s["shiptype"]) if s["shiptype"] is not None else None
-    s["shipname"], s["destination"] = tidy(s.get("shipname")), tidy(s.get("destination"))
+    s["shipname"], s["destination"] = real_name(s.get("shipname")), tidy(s.get("destination"))
     s["country"], s["callsign"] = tidy(s.get("country"), 2), tidy(s.get("callsign"), 7)
     return s
 
@@ -212,6 +222,11 @@ def category(s):
             return "carcarrier", "Car Carrier"
         if liner:
             return "container", "Container Ship"
+        if name in ("MOL COURAGE", "MOL PROFICIENCY", "NYK REMUS", "ANL WARRNAMBOOL") or (
+                name.startswith("PRESIDENT ") and hull_length(s) >= 200):     # APL's
+            return "container", "Container Ship"
+        if liveries.operator_of(name, ("general",), sure=True):
+            return "general", "General Cargo"
         if has_word(name, "BBC ", "SAL ", "JUMBO") or \
            any(k in name for k in ("SPLIET", "SWL", "HEAVY")):      # stems, not words
             return "general", "General Cargo"           # heavy-lift / breakbulk regulars
@@ -232,41 +247,64 @@ CONTAINERISH = {"container", "cargo", "carcarrier", "bulk"}
 MAX_RANGE_NMI = config.MAX_RANGE_NMI   # loft antenna ducts 400+ nmi; only paint real passers
 
 
-# UN/LOCODE -> a name a person would say. West-coast + trans-Pacific regulars.
-PORTS = {"USOAK":"Oakland","USSFO":"San Francisco","USLAX":"Los Angeles","USLGB":"Long Beach",
-         "USPDX":"Portland","USSEA":"Seattle","USTIW":"Tacoma","USRCH":"Richmond","USSCK":"Stockton",
-         "USBEN":"Benicia","USBNC":"Benicia","USHUM":"Humboldt Bay","USCEC":"Crescent City",
-         "USOOS":"Coos Bay","USAST":"Astoria","USMTY":"Monterey","USHNL":"Honolulu","CAVAN":"Vancouver","CAPRR":"Prince Rupert",
-         "MXZLO":"Manzanillo","MXLZC":"Lazaro Cardenas","PABLB":"Balboa","PAMIT":"Manzanillo Pa",
-         "CNSHA":"Shanghai","CNSHG":"Shanghai","CNNGB":"Ningbo","CNTAO":"Qingdao","CNYTN":"Yantian",
-         "CNTXG":"Taicang","CNXMN":"Xiamen","HKHKG":"Hong Kong","TWKHH":"Kaohsiung","TWKEL":"Keelung",
-         "KRPUS":"Busan","JPTYO":"Tokyo","JPYOK":"Yokohama","JPNGO":"Nagoya","JPUKB":"Kobe",
-         "SGSIN":"Singapore","VNVUT":"Vung Tau","PHMNL":"Manila","MYPKG":"Port Klang","THLCH":"Laem Chabang"}
-
-
-def clean_dest(raw):
-    """AIS destination is free text: 'USOAK', 'US OAK', 'CAPRR>USSFO', 'OAKLAND CA'.
-    Return a name a human would use, else the tidied text, else 'Sea'. A code we
-    don't know is printed as she sent it: trimming "the country prefix" off any
-    five letters turned TOKYO into KYO and ORDER into DER."""
-    if not raw:
-        return "Sea"
-    t = raw.split(">")[-1].strip("* ").upper()          # keep the *to* leg of A>B
-    if t.startswith("FOR "):                            # the caption already says FOR
-        t = t[4:].strip()
-    code = t.replace(" ", "")
-    if code in PORTS:
-        return PORTS[code]
-    return t.title() or "Sea"
+from ports import clean_dest      # her destination, as a person would say it ("Sea" = she is not saying)
 
 
 RARE = {"cutter", "research", "cruise", "sailing", "fishing", "tug", "naval", "motoryacht", "atb",
         "workboat", "excursion", "cable"}
 COMMON = {"container", "cargo", "bulk", "tanker", "carcarrier", "general"}
+EST = {"tug": 34, "atb": 185, "fishing": 24, "sailing": 14, "motoryacht": 30,
+       "cutter": 60, "research": 80, "cable": 140, "cruise": 290, "naval": 155,
+       "carcarrier": 200, "container": 300, "tanker": 190, "bulk": 190,
+       "general": 150, "workboat": 20}       # metres, when she has not said; printed with a ~
+# Faster than this and the number is not hers (knots). Princess Lily, a "fishing vessel" doing 31.
+TOP_SPEED = {"tug": 16, "atb": 16, "fishing": 20, "sailing": 20, "tanker": 20, "bulk": 20, "general": 22,
+             "container": 28, "cargo": 28, "carcarrier": 24, "cable": 20, "research": 20, "cruise": 28}
+MIDWAY_NMI = 45               # past this she was heard on a freak of the air, not passing
+DARK_OK = {"cruise", "cutter", "naval", "cable", "research"}     # worth hanging by night
 SOURCE_DAYS = 3               # paint from anything sighted in the last N days
 KEEP_PAINTED = 500            # must outlast SOURCE_DAYS even at 24 a day; also "have we ever hung her"
 GALLERY = os.path.join(STATE_DIR, "gallery")
 os.makedirs(GALLERY, exist_ok=True)
+
+
+def visible_nmi(length_m):
+    """How far off a ship this size can be and still show above the horizon, seen from
+    EYE_M metres up. 2.08 * sqrt(metres) is the mariner's distance to the horizon in
+    nautical miles, with ordinary air; each of us gets one. From 30 m: 25 for a big
+    ship, 16 for a small boat. Radio bends further than light, so being heard is no proof."""
+    top = 6 if length_m < 24 else 12 if length_m < 60 else 25 if length_m < 150 else 40
+    return 2.08 * (config.EYE_M ** 0.5 + top ** 0.5)
+
+
+def in_sight(c):
+    d = c.get("nmi")
+    size = hull_length(c.get("rec") or {}) or EST.get(c.get("cat"), 180)
+    return d is not None and d <= visible_nmi(size)
+
+
+def by_night(iso):
+    try:
+        import light
+        return (light.for_iso(iso) or {}).get("name") == "night"
+    except Exception:
+        return False
+
+
+def moment(e, cat):
+    """Which moment of her pass to hang: her closest, or, when that was in the dark and
+    she was still a fair sight by day, her closest in daylight."""
+    best = dict(rec=e.get("record"), nmi=e.get("closest_nmi"), at=e.get("closest_at"), wx=e.get("wx"))
+    day = e.get("day") if isinstance(e.get("day"), dict) else None
+    if not day or cat == "cruise" or not by_night(best["at"]):      # a liner is best with her lights on
+        return best
+    d, rec = day.get("nmi"), clean_record(day.get("record"))
+    if not isinstance(d, (int, float)) or not rec:
+        return best
+    size = hull_length(rec) or EST.get(cat, 180)
+    if d <= max(visible_nmi(size), 1.5 * (best["nmi"] or 0)):
+        return dict(rec=rec, nmi=d, at=day.get("at"), wx=day.get("wx"))
+    return best
 
 
 def candidates(live_ships, painted, now):
@@ -288,9 +326,9 @@ def candidates(live_ships, painted, now):
         if not rec["shipname"]:
             continue              # logged by MMSI, still waiting on her name packet
         cat, label = category(rec)
-        pool[rec["mmsi"]] = dict(rec=rec, cat=cat, label=label,
-                            nmi=e.get("closest_nmi"), at=e.get("closest_at"),
-                            wx=e.get("wx"), live=False)
+        m = moment(dict(e, record=rec), cat)
+        m["rec"] = dict(m["rec"], shipname=m["rec"].get("shipname") or rec["shipname"])
+        pool[rec["mmsi"]] = dict(m, cat=cat, label=label, live=False)
     for s in map(clean_record, live_ships):   # live wins: freshest position
         if not s or not s["shipname"] or s["lat"] is None or s["lon"] is None:
             continue
@@ -301,7 +339,10 @@ def candidates(live_ships, painted, now):
             continue
         cat, label = category(s)
         prev = pool.get(s["mmsi"])
-        nmi_ = min(d, prev["nmi"]) if prev and prev.get("nmi") is not None else d
+        nmi_ = d                          # where she is this minute, not the closest she ever came
+        if prev and prev.get("nmi") is not None and prev["nmi"] < d and (
+                by_night(now.isoformat()) and not by_night(prev.get("at"))):
+            continue                      # she came closer, by daylight, earlier in this pass: hang that
         pool[s["mmsi"]] = dict(rec=s, cat=cat, label=label, nmi=round(nmi_, 1),
                                              at=now.isoformat(timespec="seconds"),
                                              wx=None, live=True)
@@ -309,20 +350,35 @@ def candidates(live_ships, painted, now):
             if c["cat"] in PAINTER and m not in recent]
 
 
+def level(c, recent_dark=0):
+    """How good a passer she is, 0 the best. In sight beats merely heard (Mark, Nov 2026:
+    seven paintings in ten were ships below the horizon), and daylight beats dark unless she
+    is worth a nocturne or the wall has hung none lately."""
+    d = c.get("nmi")
+    lv = 0.0 if in_sight(c) else 1.0 if d is not None and d <= MIDWAY_NMI else 2.0
+    if c.get("at") and by_night(c["at"]) and not (c.get("cat") in DARK_OK and lv == 0) and recent_dark:
+        lv += 1.5
+    return lv
+
+
 def pick(cands, painted):
-    """Variety rule (Mark, Jul 30): alternate the everyday (box/bulk/tanker/car
-    ship) with the unique (research, cutter, cruise, sail, fish, tow) whenever
-    the last-3-days pool allows: cargo, research, cargo, cutter. Never the same
-    type twice running if there is a choice. Cargo runs are fine when that is
-    all the coast offers. Within a group: never-painted, then most recent."""
+    """Real passers first (see level), and among them the variety rule (Mark, Jul 30):
+    alternate the everyday (box/bulk/tanker/car ship) with the unique (research, cutter,
+    cruise, sail, fish, tow) whenever the last-3-days pool allows: cargo, research, cargo,
+    cutter. Never the same type twice running if there is a choice. Cargo runs are fine
+    when that is all the coast offers. Within a group: never-painted, then most recent."""
     if not cands:
         return None
     hung = [p for p in painted if not p.get("failed")]
     hist = [p.get("cat") for p in hung][-6:]
     last = hist[-1] if hist else None
     ever = {int(p.get("mmsi", 0)) for p in hung}
-    rare = [c for c in cands if c["cat"] in RARE]
-    common = [c for c in cands if c["cat"] not in RARE]
+    dark = sum(1 for p in hung[-3:] if p.get("dark"))        # so about one in four may be a night piece
+    lv = {id(c): level(c, dark) for c in cands}
+    near = [c for c in cands if lv[id(c)] < 2]               # in sight, or midway by daylight
+    pool = near if any(c["cat"] != last for c in near) else cands
+    rare = [c for c in pool if c["cat"] in RARE]
+    common = [c for c in pool if c["cat"] not in RARE]
     if last in RARE and common:
         group = common                                   # unique last: an everyday one
     elif (last not in RARE or last is None) and rare:
@@ -332,13 +388,13 @@ def pick(cands, painted):
     diff = [c for c in group if c["cat"] != last]        # not the same type twice
     if diff:
         group = diff
-    # rarest first: types least recently shown, then unseen ships, then recency
+    # nearest level, then rarest: types least recently shown, then unseen ships, then recency
     def since_shown(cat):
         for i, h in enumerate(reversed(hist)):
             if h == cat:
                 return i
         return 99
-    group.sort(key=lambda c: (-since_shown(c["cat"]), c["mmsi"] in ever,
+    group.sort(key=lambda c: (lv[id(c)], -since_shown(c["cat"]), c["mmsi"] in ever,
                               -_ts(c.get("at")), c.get("nmi") or 0))
     return group[0]
 
@@ -351,24 +407,27 @@ def _ts(iso):
 
 
 def spotted_text(c, now):
-    """'PASSING NOW · 12 NMI OFF' or 'SPOTTED TUE 4:20 PM · 22 NMI OFF'."""
+    """'PASSING NOW · 12 NMI OFF' or 'SPOTTED TUE 4:20 PM · 22 NMI OFF'. A ship below the
+    horizon was not spotted and is not passing: she was HEARD."""
+    seen = in_sight(c)
+    verb = "SPOTTED" if seen else "HEARD"
     nmi_ = c.get("nmi")
     off = "%d NMI OFF" % round(nmi_) if nmi_ is not None else ""
     if c.get("live"):
-        when = "PASSING NOW"
+        when = "PASSING NOW" if seen else "HEARD NOW"
     else:
         try:
             t = datetime.datetime.fromisoformat(c.get("at"))
             hours = (now - t).total_seconds() / 3600.0
             if hours < 1.2:
-                when = "SPOTTED THIS HOUR"
+                when = verb + " THIS HOUR"
             elif hours < 20 and t.date() == now.date():
                 n = round(hours)
-                when = "SPOTTED %d %s AGO" % (n, "HR" if n == 1 else "HRS")
+                when = "%s %d %s AGO" % (verb, n, "HR" if n == 1 else "HRS")
             else:
-                when = t.strftime("SPOTTED %a %-I:%M %p").upper()
+                when = t.strftime(verb + " %a %-I:%M %p").upper()
         except Exception:
-            when = "SPOTTED"
+            when = verb
     return " · ".join(x for x in (when, off) if x)
 
 
@@ -405,6 +464,87 @@ def dist_key(s):
     return math.acos(max(-1.0, min(1.0, c)))
 
 
+def note_for(st, now, live, feed_ok):
+    """What the wall should say about the radio, if anything. An empty sea is not a fault:
+    this coast goes silent for up to nine hours with a good antenna (measured Oct-Nov 2026),
+    and on Nov 1 and Nov 23 the old rule blamed the connector after four."""
+    if not feed_ok:
+        hrs = (now.timestamp() - _ts(st.get("feed_down_since"))) / 3600.0
+        log("RADIO OFFLINE: no feed from the receiver (%.1f hrs)" % hrs)
+        return offline_text(st["feed_down_since"], hrs)
+    h = read_health()
+    if h.get("verdict") == "FAULT":                       # the receiver board itself is not answering
+        log("radio self-test FAULT: %s" % h["detail"])
+        return "RECEIVER NOT ANSWERING"
+    if h.get("verdict") == "DEAF":                        # silent far longer than it has been lately
+        log("radio self-test DEAF: %s" % h["detail"])
+        return "NOTHING HEARD %d HRS · CHECK ANTENNA" % round(h.get("silent_h") or 0)
+    if live:
+        return None
+    if h:
+        sil = h.get("silent_h")
+    else:                                                 # no self-test to ask: go by when a ship was last heard,
+        sil = (now.timestamp() - _ts(st.get("last_live_at"))) / 3600.0 if st.get("last_live_at") else None
+        if now.timestamp() - _ts(st.get("last_run_at")) > 2 * 3600:
+            sil = None                                    # but only while this frame was there to listen
+            st["last_live_at"] = now.isoformat(timespec="seconds")
+    if sil is not None and sil >= 3:
+        log("quiet sea: nothing heard in %.1f hrs" % sil)
+        return "QUIET SEA · %d HRS" % round(sil)
+    return None
+
+
+def build_ship(c, now, note=None):
+    """The record a painting is made from, out of a candidate."""
+    import light, layout
+    s, cat, label = c["rec"], c["cat"], c["label"]
+    known = hull_length(s)
+    est = EST.get(cat, 180)
+    # an ATB gives the tug's own length: 39 m of tug is pushing 150 m of barge
+    tug_only = cat == "atb" and 0 < known < 95
+    length = est if tug_only else known or est            # never invent a fact silently
+    when = datetime.datetime.fromisoformat(c["at"]) if c.get("at") else now
+    course = course_of(s)
+    if course is None:
+        log("no usable heading/course (heading=%r cog=%r); arrow defaults south"
+            % (s.get("heading"), s.get("cog")))
+        course = 180
+    speed = s.get("speed")
+    speed = float(speed) if isinstance(speed, (int, float)) and 0 <= speed < 102.3 else 0.0
+    doubt = speed > TOP_SPEED.get(cat, 60)
+    if doubt:
+        log("%s says %.1f kn, more than a %s makes; painted without it" % (s["shipname"], speed, label.lower()))
+        speed = 0.0
+    ship = dict(v=2, name=s["shipname"].title(), type=PAINTER[cat], length_m=int(length),
+                length_est=not bool(known) or tug_only,
+                dest=clean_dest(s.get("destination")).title(), speed_kn=speed, country=s.get("country") or "",
+                date=when.strftime("%-d %B %Y").upper(), mmsi=int(s.get("mmsi") or 0),
+                heading=course, shiptype_text=label,
+                spotted=spotted_text(c, now), nmi=c.get("nmi"), radio_note=note, ais=extras(s))
+    if tug_only:
+        ship["tug_m"] = int(known)
+    if doubt or not isinstance(s.get("speed"), (int, float)):
+        ship["speed_unknown"] = True
+    ship["light"] = light.for_iso(c.get("at"))            # ...and the light of that hour
+    ship["layout"] = layout.choose(ship)
+    return ship
+
+
+def keep_copy(src, ship, wx, at, **more):
+    """Keep every sourced painting: the frame is a printmaker, not a whiteboard. Beside the
+    picture goes what she was painted FROM, so repaint.py can paint her again at any size.
+    The place settings go along: they decide which way she sails and what the corner says."""
+    import shutil
+    safe = "".join(ch if ch.isalnum() else "_" for ch in ship["name"].lower())
+    keep = os.path.join(GALLERY, "%s_%s_%d" % (at.strftime("%Y%m%d_%H%M"), safe, ship["mmsi"]))
+    shutil.copy(src, keep + ".png")
+    with open(keep + ".json.tmp", "w") as f:
+        json.dump(dict({"ship": ship, "wx": wx, "painted_at": at.isoformat(timespec="seconds"),
+                        "place": config.PLACE, "sea_bearing": config.SEA_BEARING}, **more), f, indent=1)
+    os.replace(keep + ".json.tmp", keep + ".json")
+    return keep
+
+
 def main(aside=()):
     """aside: ships the painter choked on earlier in this same run (see below)."""
     now = datetime.datetime.now()
@@ -412,42 +552,24 @@ def main(aside=()):
         log("quiet hours, holding current image"); return
     st = load_state()
     painted = st.get("painted", [])
-    # radio health: unreachable feed = radio Pi down; reachable-but-silent for
-    # hours while the sea should be talking = receiver deaf (stale dongle handle
-    # after a replug). Either way the wall says so instead of quietly repainting.
-    radio_note = None
+    # radio health: unreachable feed = radio Pi down; a reachable radio grades itself.
+    # Either way the wall says so instead of quietly repainting.
+    feed_ok = True
     try:
         live = read_feed()
         st["feed_down_since"] = None
     except Exception as e:
         log(f"no AIS feed ({e}); painting from the archive")
-        live = []
-        fd = st.get("feed_down_since") or now.isoformat(timespec="seconds")
-        st["feed_down_since"] = fd
-        hrs = (now.timestamp() - _ts(fd)) / 3600.0
-        radio_note = offline_text(fd, hrs)
-        log("RADIO OFFLINE: no feed from the receiver (%.1f hrs)" % hrs)
+        live, feed_ok = [], False
+        st["feed_down_since"] = st.get("feed_down_since") or now.isoformat(timespec="seconds")
     if live:
         st["last_live_at"] = now.isoformat(timespec="seconds")
-    elif radio_note is None and st.get("last_live_at"):
-        quiet = (now.timestamp() - _ts(st["last_live_at"])) / 3600.0
-        if quiet >= 6:                                    # daytime sea rarely stays this quiet
-            radio_note = "RADIO QUIET %d HRS" % round(quiet)
-            log("RECEIVER-DEAF? no ship heard in %.1f hrs" % quiet)
-    # The radio Pi grades its own antenna hourly (health.json on :8101). DEAF or
-    # a long daytime WEAK streak points at the antenna (usually the SMA
-    # connector, the Aug 5 lesson) hours before the 6-hour quiet rule fires.
-    # Feed-down still wins the caption.
-    if radio_note is None:
-        h = read_health()
-        if h.get("verdict") == "DEAF":
-            radio_note = "CHECK ANTENNA CONNECTOR"
-            log("radio self-test DEAF: %s" % h["detail"])
-        elif h.get("weak_streak", 0) >= 6 and 9 <= now.hour <= 19:
-            radio_note = "ANTENNA WEAK %d HRS" % h["weak_streak"]
-            log("radio self-test weak streak %d" % h["weak_streak"])
+    radio_note = note_for(st, now, live, feed_ok)
+    st["last_run_at"] = now.isoformat(timespec="seconds")
     cands = [c for c in candidates(live, painted, now)
              if c["mmsi"] not in {a["mmsi"] for a in aside}]
+    if config.FAR_WAIT_H and (now.timestamp() - _ts(st.get("since"))) / 3600.0 < config.FAR_WAIT_H:
+        cands = [c for c in cands if in_sight(c)]
     c = pick(cands, painted)
     if not c or len(aside) >= 3:
         save_state(st)
@@ -457,35 +579,14 @@ def main(aside=()):
         else:
             log("nothing paintable in the last %d days; holding current" % SOURCE_DAYS)
         return
-    s, cat, label = c["rec"], c["cat"], c["label"]
-    known = hull_length(s)
-    est = {"tug": 34, "atb": 185, "fishing": 24, "sailing": 14, "motoryacht": 30,
-           "cutter": 60, "research": 80, "cable": 140, "cruise": 290, "naval": 155,
-           "carcarrier": 200, "container": 300, "tanker": 190, "bulk": 190,
-           "general": 150, "workboat": 20}.get(cat, 180)
-    length = known or est                              # never invent a fact silently
-    dest = clean_dest(s.get("destination"))
-    when = datetime.datetime.fromisoformat(c["at"]) if c.get("at") else now
-    course = course_of(s)
-    if course is None:
-        log("no usable heading/course (heading=%r cog=%r); arrow defaults south"
-            % (s.get("heading"), s.get("cog")))
-        course = 180
-    speed = s.get("speed")
-    speed = float(speed) if isinstance(speed, (int, float)) and 0 <= speed < 102.3 else 0.0
-    ship = dict(name=s["shipname"].title(), type=PAINTER[cat], length_m=int(length),
-                length_est=not bool(known),
-                dest=dest.title(), speed_kn=speed, country=s.get("country") or "",
-                date=when.strftime("%-d %B %Y").upper(), mmsi=int(s.get("mmsi") or 0),
-                heading=course, shiptype_text=label,
-                spotted=spotted_text(c, now), nmi=c.get("nmi"), radio_note=radio_note, ais=extras(s))
-    import weather, art_directions as A, light
+    cat, label = c["cat"], c["label"]
+    ship = build_ship(c, now, radio_note)
+    import weather, art_directions as A
     wx = c.get("wx")                             # the conditions she passed in
     if not wx:
         wx = weather.fetch()
         if not c.get("live"):
             log("no weather was logged at her passing; painting under this hour's instead")
-    ship["light"] = light.for_iso(c.get("at"))   # ...and the light of that hour
     log(f"painting {ship['name']} ({label}, {ship['length_m']}m, {ship['spotted']}, {wx['label']}"
         f"; fog via {wx.get('fog_src', 'n/a')})")
     src = os.path.join(STATE_DIR, "current_render.png")
@@ -507,23 +608,13 @@ def main(aside=()):
         log("PAINTED BUT PANEL FAILED: %s -- render is at %s" % (note, src))
     elif ok:
         log("panel %s" % note)
-    # keep every sourced painting: the frame is a printmaker, not a whiteboard
-    safe = "".join(ch if ch.isalnum() else "_" for ch in ship["name"].lower())
     try:
-        import shutil
-        keep = os.path.join(GALLERY, "%s_%s_%d" % (now.strftime("%Y%m%d_%H%M"), safe, ship["mmsi"]))
-        shutil.copy(src, keep + ".png")
-        # ...and what she was painted FROM, so repaint.py can paint her again at any size.
-        # The place settings go along: they decide which way she sails and what the corner says.
-        with open(keep + ".json.tmp", "w") as f:
-            json.dump({"ship": ship, "wx": wx, "painted_at": now.isoformat(timespec="seconds"),
-                       "place": config.PLACE, "sea_bearing": config.SEA_BEARING}, f, indent=1)
-        os.replace(keep + ".json.tmp", keep + ".json")
+        keep_copy(src, ship, wx, now)
     except Exception as e:
         log(f"gallery copy failed: {e}")
     painted.extend(aside)
     painted.append({"mmsi": ship["mmsi"], "cat": cat, "name": ship["name"],
-                    "at": now.isoformat(timespec="seconds")})
+                    "dark": ship["light"].get("name") == "night", "at": now.isoformat(timespec="seconds")})
     st.update({"last_cat": cat, "last_mmsi": ship["mmsi"], "name": ship["name"],
                "since": now.isoformat(timespec="seconds"), "painted": painted[-KEEP_PAINTED:]})
     save_state(st)

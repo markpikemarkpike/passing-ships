@@ -101,7 +101,7 @@ def paint_sky(cv, seed, fog=0.4, sun_x=None, sun_y=None, light=None, flip=False)
 
 # ------------------------------------------------------------------ sea
 
-def paint_sea(cv, seed, fog=0.4, wave=0.5, wind=0.4, light=None, flip=False):
+def paint_sea(cv, seed, fog=0.4, wave=0.5, wind=0.4, light=None, flip=False, swell=1.0):
     """Mist-light at the horizon, darkest and richest in the foreground. At the
     warm hours the far water takes the sky's colour and a glitter path of
     lifted flakes runs down from a low western sun."""
@@ -140,7 +140,7 @@ def paint_sea(cv, seed, fog=0.4, wave=0.5, wind=0.4, light=None, flip=False):
         i += 1
         if r.random() < 0.32 * (1.3 - wave) or depth < 0.05:
             continue
-        amp = (2 + 8 * depth) * (0.55 + 1.2 * wave) * S
+        amp = (2 + 8 * depth) * (0.55 + 1.2 * wave) * S * swell
         xs = np.linspace(-20 * S, W + 20 * S, 22)
         ys_top = y + np.sin(xs / (r.uniform(60, 140) * S) + r.uniform(0, 6)) * amp
         thick = (r.uniform(6, 16) + 30 * depth) * S
@@ -688,6 +688,22 @@ def paint_scene(cv, ship, wx, seed):
         fog = min(0.92, fog + float(np.interp(nmi, [10, 40, 100], [0.0, 0.12, 0.28])))
     cx = W * 0.30 if ship.get("type") == "tug" else W * 0.46   # tow trails astern
     y = HORIZON + 34 * S
+    lay = ship.get("layout") if isinstance(ship.get("layout"), dict) else None
+    rough = 0.0
+    if lay:                                          # records from Nov 24 2026: see layout.py
+        cx, L = W * float(lay.get("x", 0.46)), L * float(lay.get("zoom", 1.0))
+        y += (6 if lay.get("look") == "close" else -8 if lay.get("look") == "far" else 0) * S
+        if ship["length_m"] < 60:                    # a boat keeps her place on the sea
+            y = HORIZON + 34 * S
+        if lay.get("look") == "close":               # as big as she can be without reaching the caption
+            L = min(L, CLOSE_PX.get(ship["type"], 620) * S)
+            aft = ship["type"] in ("tanker", "bulk", "general", "container", "atb")
+            # off the sheet goes the end with nothing on it: the bow of a ship with her house aft
+            cx = min(W * 0.40, L * 0.5 - 0.10 * L) if aft else max(cx, W + 0.12 * L - L * 0.5)
+        else:                                        # the whole ship, with room for her wake
+            cx = float(np.clip(cx, L * 0.5 + 22 * S, W - L * 0.5 - 60 * S)) if L < W * 0.8 else W * 0.5
+        rough = float(np.clip((wx.get("wave_ft", 4) - 8.0) / 10.0, 0.0, 1.0))   # 8 ft: lively. 18: a gale sea
+        wave = min(wave + 0.35 * rough, 1.3)
 
     lt = ship.get("light")                            # light of the sighting hour
     # A ship sailing left to right is painted bow-left like the rest and the sheet
@@ -709,7 +725,7 @@ def paint_scene(cv, ship, wx, seed):
            (x0 + L * 0.055, y - th * 0.3 * curl), (x0 + L * 0.020, y + th * 0.7)]
     cv.add_reserve(foam, feather=1.4)
     cv.add_reserve(bow, feather=1.1)
-    paint_sea(cv, seed, fog=fog, wave=wave, wind=wind, light=lt, flip=flip)
+    paint_sea(cv, seed, fog=fog, wave=wave, wind=wind, light=lt, flip=flip, swell=1.0 + 1.3 * rough)
     # mist dissolves the horizon (kept clear of the foam line below)
     cv.soften_band(HORIZON - (30 + 25 * fog) * S, HORIZON + (8 + 8 * fog) * S, (4 + 12 * fog) * S)
     cv.add_reserve(foam, feather=1.2)     # protect foam through ship + reflection
@@ -757,6 +773,8 @@ def paint_scene(cv, ship, wx, seed):
         if dark:
             del cv.wash
     after = cv.img.copy() if dark else None
+    if rough > 0.05:
+        heavy_sea(cv, cx, y, L, th, rough, seed, ship["length_m"])
     cv.clear_reserves()
     # finishing whites in gouache, the way a painter closes: the wave slapping
     # the hull (found edge, brightest accent), the wake trailing astern, spray.
@@ -794,6 +812,43 @@ def paint_scene(cv, ship, wx, seed):
     if flip:
         cv.img = np.ascontiguousarray(cv.img[:, ::-1, :])
     return cv
+
+
+CLOSE_PX = {"container": 420, "cruise": 470, "carcarrier": 600, "general": 540, "naval": 470, "cutter": 430,
+            "research": 430, "cable": 430, "tanker": 600, "bulk": 600, "atb": 600}
+
+
+def heavy_sea(cv, cx, y, L, th, rough, seed, length_m):
+    """A big sea in front of her: crests that cut across the foot of the hull, and white water
+    where they break. Small craft lose more of themselves behind it than a ship does."""
+    r = np.random.default_rng(seed + 1500)
+    small = 1.0 if length_m < 60 else 0.55
+    n = int(round(3 + 2 * rough))
+    for k in range(n):
+        x0 = cx + (k + 0.5 - n / 2) / n * L * 1.2 + r.uniform(-0.06, 0.06) * L
+        w = r.uniform(0.16, 0.26) * max(L, 150 * S)
+        h = (4 + 12 * rough) * S * small * r.uniform(0.7, 1.15)
+        base = y + th * 0.7
+        t = np.linspace(-1, 1, 19)
+        lean = 0.18 * w                                           # she leans the way the wind blows
+        hump = np.cos(t * np.pi / 2) ** 2
+        top = [(x0 + a * w + lean * q, base - h * q) for a, q in zip(t, hump)]
+        low = [(x0 + a * w, base + 5 * S * (1 - a * a)) for a in t[::-1]]
+        # a crest is the sea's own colour: lay the light water, then shade it
+        cv.gouache(top + low, mix(TEAL, FOGGREY, 0.5), alpha=0.60 + 0.2 * rough, jitter=0.8, feather=2.4, dry=0.06, seed=seed + 1510 + k)
+        cv.wash(top + low, mix(INDIGO, TEAL, 0.35), density=0.20, jitter=1.0, feather=3.0, edge_dark=0.15, granulation=0.25, variegation=0.4, seed=seed + 1530 + k)
+        xs = [p for p, q in zip(top, hump) if q > 0.55]
+        cap = xs + [(px - 1.5 * S, py + (2.2 + 3 * rough) * S * r.uniform(0.6, 1.2)) for px, py in xs[::-1]]
+        cv.gouache(cap, (0.965, 0.96, 0.95), alpha=0.9, jitter=1.0, feather=0.8, dry=0.30, seed=seed + 1550 + k)
+    # spindrift: long torn streaks over the near water
+    for k in range(int(round(9 * rough))):
+        d = r.uniform(0.35, 0.95)
+        yy = HORIZON + d * (H - HORIZON)
+        xx, wl = r.uniform(0, W), (30 + 70 * d) * S
+        if abs(yy - y) < 14 * S:
+            continue
+        cv.gouache_line([(xx, yy), (xx + wl * 0.5, yy + r.uniform(-2, 2) * S), (xx + wl, yy + r.uniform(-3, 3) * S)],
+                        (0.96, 0.955, 0.945), width=max(1, int(1 + 2 * d)), alpha=0.35 + 0.3 * rough, jitter=1.6, seed=seed + 1570 + k)
 
 
 def ship_px(length_m):

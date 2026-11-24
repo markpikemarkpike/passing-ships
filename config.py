@@ -23,6 +23,9 @@ def _stations(raw):
 LAT = _num("LAT", 38.72, -90.0, 90.0)
 LON = _num("LON", -123.45, -180.0, 180.0)
 MAX_RANGE_NMI = _num("MAX_RANGE_NMI", 100.0, 1.0, 1000.0)   # the loft antenna ducts 400+ nmi
+EYE_M = _num("EYE_M", 30.0, 1.0, 1500.0)            # height of your eye above the sea: how far you can see a ship
+FAR_WAIT_H = _num("FAR_WAIT_H", 0, 0, 48)               # hold the picture this long before hanging a ship that
+                                                        # was only heard, below the horizon. 0 = once an hour regardless
 QUIET_START = _num("QUIET_START", 23, 0, 23, int)            # hold the image from this hour...
 QUIET_END = _num("QUIET_END", 7, 0, 23, int)                 # ...until this one
 # The words in the upper-right corner of every painting. Printable characters
