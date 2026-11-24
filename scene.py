@@ -2223,7 +2223,7 @@ def paint_moon_and_stars(cv, lt, fog, seed, flip, shipmask, twilight=False):
 # how much of her length the lit house may take up, and how many of its windows are lit
 _HOUSE = {"container": (0.075, 0.55), "bulk": (0.085, 0.55), "tanker": (0.10, 0.55), "general": (0.10, 0.55),
           "carcarrier": (0.12, 0.35), "cruise": (1.0, 0.82), "motoryacht": (0.55, 0.60), "excursion": (0.7, 0.7),
-          "research": (0.40, 0.55), "cutter": (0.32, 0.40), "naval": (0.30, 0.15), "tug": (0.40, 0.5), "atb": (0.40, 0.5),
+          "research": (0.40, 0.55), "cable": (0.30, 0.55), "cutter": (0.32, 0.40), "naval": (0.30, 0.15), "tug": (0.40, 0.5), "atb": (0.40, 0.5),
           "fishing": (0.28, 0.6), "workboat": (0.35, 0.5), "sailing": (0.0, 0.0)}
 
 
@@ -2589,3 +2589,107 @@ def paint_bulk_carrier2(cv, cx, y, L, seed, fog=0.4, livery=None, ship=None):
 PAINTERS["bulk"] = paint_bulk_carrier2
 for _t in _ANON_HULL:
     HULL_OF[_t] = lambda s: cargo_livery(s).get("hull") or HULLDARK
+
+
+# =====================================================================
+# Cable ship (Nov 23 2026), from photographs of Cable Innovator: raked bow with a light foremast, a tall
+# white upper strake over the coloured hull, the house forward of amidships stepping up to a wide bridge,
+# an after control house, a pair of dark stacks between them, orange boats, then a long low working deck
+# with a knuckle crane, and the giveaway: the stern sheaves, big wheels overhanging the transom, because
+# she pays her cable out over the stern. No bow sheaves. Faces left.
+# =====================================================================
+def paint_cable_ship(cv, cx, y, L, seed, fog=0.4, livery=None):
+    lv = livery or {}
+    x0 = cx - L / 2
+    X = lambda f: x0 + f * L                                     # fraction of her length, 0 = stem
+    Y = lambda h: y - h * L                                      # height above the water, in lengths
+    ink, inkd = fade(SUMI, fog), 0.8 * (1 - 0.45 * fog)
+    hc = lv.get("hull") or (0.16, 0.24, 0.45)
+    hull_col = fade(hc, fog * 0.7)
+    white = mix((0.965, 0.955, 0.93), FOGGREY, fog * 0.35)
+    shade = mix((0.76, 0.80, 0.86), FOGGREY, fog * 0.4)
+    steel = mix(shade, PAYNE, 0.45)
+    orange = fade(mix(VERMIL, OCHRE, 0.42), fog * 0.4)
+    box = lambda a, b, lo, hi, c, k, al=0.95: cv.gouache([(X(a), Y(hi)), (X(b), Y(hi)), (X(b), Y(lo)), (X(a), Y(lo))], c, alpha=al,
+                                                         jitter=0.6, feather=0.5, seed=seed + k)
+    # hull: raked stem, long straight sheer, counter cut up under the sheaves
+    hull = [(X(-0.015), Y(0.082)), (X(0.040), Y(0.030)), (X(0.055), y + 1), (X(0.930), y + 1), (X(0.975), Y(0.022)),
+            (X(0.990), Y(0.058)), (X(0.800), Y(0.062)), (X(0.790), Y(0.078))]
+    cv.wash(hull, hull_col, density=1.05, jitter=1.3, feather=1.0, edge_dark=0.55, granulation=0.3, variegation=0.3, seed=seed)
+    cv.wash([(X(0.055), y - 3 * S), (X(0.930), y - 3 * S), (X(0.925), y + 1), (X(0.058), y + 1)], fade(lv.get("boot") or RUST, fog),
+            density=0.45, jitter=1.4, feather=1.3, seed=seed + 1)
+    # the white upper strake, its lower edge shaded so it holds against a pale sky
+    strake = [(X(-0.032), Y(0.112)), (X(0.790), Y(0.108)), (X(0.790), Y(0.078)), (X(-0.015), Y(0.082))]
+    cv.gouache(strake, shade, alpha=0.95, jitter=0.8, feather=0.6, seed=seed + 2)
+    cv.gouache([(X(-0.031), Y(0.112)), (X(0.790), Y(0.108)), (X(0.790), Y(0.092)), (X(-0.022), Y(0.096))], white, alpha=0.95,
+               jitter=0.6, feather=0.5, seed=seed + 3)
+    # ---- upperworks
+    for a, b, lo, hi, k in ((0.235, 0.700, 0.108, 0.143, 4), (0.385, 0.640, 0.143, 0.164, 6), (0.415, 0.575, 0.164, 0.192, 8),
+                            (0.660, 0.715, 0.143, 0.186, 10)):
+        box(a, b, lo, hi, shade, k)
+        box(a, b, lo + (hi - lo) * 0.45, hi, white, k + 1)
+    # wing of the bridge, reaching forward of the house; windows on both control positions
+    box(0.400, 0.590, 0.176, 0.188, fade(INDIGO, fog), 12, 0.62)
+    box(0.655, 0.722, 0.172, 0.182, fade(INDIGO, fog), 13, 0.62)
+    r = np.random.default_rng(seed + 14)
+    for h, a, b in ((0.126, 0.250, 0.690), (0.153, 0.395, 0.630)):
+        xk = X(a)
+        while xk < X(b):
+            seg = L * r.uniform(0.006, 0.010)
+            cv.line([(xk, Y(h)), (xk + seg, Y(h))], ink, width=1, density=inkd * 0.6, seed=seed + 60 + int(xk))
+            xk += seg + L * r.uniform(0.010, 0.016)
+    for pts, k in (([(X(0.235), Y(0.108)), (X(0.235), Y(0.143)), (X(0.700), Y(0.143)), (X(0.700), Y(0.108))], 15),
+                   ([(X(0.385), Y(0.143)), (X(0.385), Y(0.164)), (X(0.640), Y(0.164))], 16),
+                   ([(X(0.395), Y(0.164)), (X(0.415), Y(0.192)), (X(0.575), Y(0.192)), (X(0.590), Y(0.164))], 17),
+                   ([(X(0.660), Y(0.143)), (X(0.655), Y(0.186)), (X(0.722), Y(0.186)), (X(0.715), Y(0.143))], 18)):
+        cv.line(pts, ink, width=1, density=inkd * 0.85, seed=seed + k)
+    # twin stacks between the two control positions
+    fun = fade(lv.get("funnel") or (0.20, 0.44, 0.48), fog * 0.6)
+    for k, a in enumerate((0.598, 0.632)):
+        cv.gouache([(X(a), Y(0.226)), (X(a + 0.026), Y(0.226)), (X(a + 0.028), Y(0.143)), (X(a - 0.002), Y(0.143))], fun, alpha=0.96,
+                   jitter=0.6, feather=0.5, seed=seed + 20 + k)
+        cv.gouache([(X(a), Y(0.232)), (X(a + 0.026), Y(0.232)), (X(a + 0.026), Y(0.220)), (X(a), Y(0.220))], ink, alpha=0.9,
+                   jitter=0.4, feather=0.4, seed=seed + 23 + k)
+    # masts: the radar mast over the bridge, the light foremast at the bow
+    cv.line([(X(0.505), Y(0.192)), (X(0.505), Y(0.262))], ink, width=2, density=inkd, seed=seed + 26)
+    for h, w_ in ((0.222, 0.022), (0.242, 0.015)):
+        cv.line([(X(0.505 - w_), Y(h)), (X(0.505 + w_), Y(h))], ink, width=1, density=inkd * 0.9, seed=seed + 27 + int(h * 1000))
+    cv.line([(X(0.028), Y(0.112)), (X(0.028), Y(0.180))], ink, width=2, density=inkd * 0.9, seed=seed + 30)
+    cv.line([(X(0.018), Y(0.164)), (X(0.038), Y(0.164))], ink, width=1, density=inkd * 0.8, seed=seed + 31)
+    # orange boats on the shelter deck, forward of the bridge
+    for k, a in enumerate((0.262, 0.322)):
+        cv.gouache([(X(a), Y(0.163)), (X(a + 0.046), Y(0.163)), (X(a + 0.040), Y(0.149)), (X(a + 0.006), Y(0.149))], orange, alpha=0.96,
+                   jitter=0.5, feather=0.4, seed=seed + 32 + k)
+        cv.line([(X(a + 0.004), Y(0.146)), (X(a + 0.004), Y(0.170)), (X(a + 0.042), Y(0.170)), (X(a + 0.042), Y(0.146))], ink, width=1,
+                density=inkd * 0.7, seed=seed + 35 + k)
+    # ---- the working deck: cable engine and low gear, knuckle crane, stern sheaves
+    cv.line([(X(0.790), Y(0.064)), (X(0.990), Y(0.060))], ink, width=2, density=inkd * 0.85, seed=seed + 40)
+    for k, (a, b, h) in enumerate(((0.725, 0.782, 0.128), (0.805, 0.850, 0.090), (0.860, 0.900, 0.080))):
+        box(a, b, 0.108 if a < 0.79 else 0.062, h, steel, 41 + k)
+        cv.line([(X(a), Y(h)), (X(b), Y(h))], ink, width=1, density=inkd * 0.8, seed=seed + 45 + k)
+    cv.line([(X(0.765), Y(0.108)), (X(0.765), Y(0.168))], ink, width=3, density=inkd, seed=seed + 48)       # crane post...
+    cv.line([(X(0.765), Y(0.165)), (X(0.840), Y(0.178)), (X(0.885), Y(0.140))], mix(white, PAYNE, 0.35), width=3, density=0.9, seed=seed + 49)
+    cv.line([(X(0.765), Y(0.166)), (X(0.840), Y(0.180)), (X(0.886), Y(0.141))], ink, width=1, density=inkd, seed=seed + 50)  # ...and knuckle boom
+    ramp = [(X(0.900), Y(0.060)), (X(0.968), Y(0.100)), (X(1.020), Y(0.084)), (X(1.026), Y(0.052)), (X(0.985), Y(0.030)), (X(0.975), Y(0.056))]
+    cv.gouache(ramp, steel, alpha=0.96, jitter=0.6, feather=0.5, seed=seed + 51)                            # the sheave frame, overhanging
+    cv.line(ramp + [ramp[0]], ink, width=1, density=inkd * 0.9, seed=seed + 52)
+    t = np.linspace(0, 2 * np.pi, 18)
+    for k, (a, h, rad) in enumerate(((0.958, 0.072, 0.019), (1.004, 0.060, 0.022))):                        # the wheels
+        ring = [(X(a) + rad * L * np.cos(q), Y(h) + rad * L * np.sin(q)) for q in t]
+        cv.gouache(ring, white, alpha=0.96, jitter=0.3, feather=0.4, seed=seed + 53 + k)
+        cv.line(ring, ink, width=2, density=inkd, seed=seed + 55 + k)
+        cv.gouache([(X(a) + 0.006 * L * np.cos(q), Y(h) + 0.006 * L * np.sin(q)) for q in t], ink, alpha=0.9, jitter=0.2, feather=0.3, seed=seed + 57 + k)
+    # found edges: the sheer and the raked stem
+    cv.line([(X(-0.032), Y(0.112)), (X(0.790), Y(0.108)), (X(0.790), Y(0.064))], ink, width=2, density=inkd * 0.75, seed=seed + 58)
+    cv.line([(X(-0.032), Y(0.112)), (X(-0.015), Y(0.082)), (X(0.040), Y(0.030)), (X(0.055), y + 1)], ink, width=2, density=inkd, seed=seed + 59)
+    return hull_col
+
+
+def _cable_hull(ship):
+    import liveries
+    return liveries.for_ship(ship.get("name", ""), "cable")["hull"]
+
+
+PAINTERS["cable"] = paint_cable_ship
+REFL_COL["cable"] = HULLDARK
+HULL_OF["cable"] = _cable_hull

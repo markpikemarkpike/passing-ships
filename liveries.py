@@ -42,6 +42,7 @@ GENERIC = {
     "carcarrier": dict(hull=WHITE, boot=(0.16, 0.19, 0.27), house=WHITE, funnel=WHITE, band=None),
     "cruise":     dict(hull=WHITE, boot=NAVY, house=WHITE, funnel=WHITE, band=None),
     "research":   dict(hull=(0.16, 0.32, 0.62), boot=RUST, house=WHITE, funnel=WHITE, band=None),
+    "cable":      dict(hull=(0.16, 0.24, 0.45), boot=RUST, house=WHITE, funnel=(0.20, 0.44, 0.48), band=None),
     "tug":        dict(hull=BLACK_HULL, boot=(0.78, 0.30, 0.20), house=WHITE, funnel=(0.13, 0.12, 0.14), band=None),
     "atb":        dict(hull=BLACK_HULL, boot=(0.78, 0.30, 0.20), house=WHITE, funnel=(0.13, 0.12, 0.14), band=None),
     "workboat":   dict(hull=BLACK_HULL, boot=(0.78, 0.30, 0.20), house=WHITE, funnel=(0.13, 0.12, 0.14), band=None),
@@ -141,6 +142,14 @@ _RESEARCH = [
     (("FALKOR",), dict(hull=WHITE, boot=(0.13, 0.28, 0.55), house=WHITE, funnel=(0.13, 0.28, 0.55)),
      "Schmidt Ocean Falkor: white with blue"),
 ]
+# ---------------- cable ships (found by name: AIS has no code for them) ----------------
+_CABLE = [
+    (("CABLE INNOVATOR",), dict(hull=(0.78, 0.16, 0.16), boot=(0.62, 0.14, 0.14), house=WHITE, funnel=(0.16, 0.30, 0.36)),
+     "Cable Innovator: red hull, white upperworks, dark teal stacks (as photographed Oct-Dec 2024; blue before that)"),
+    (("CABLE VENTURE", "CABLE VIGILANCE", "WAVE SENTINEL", "WAVE VENTURE", "GLOBAL SENTINEL", "RENE DESCARTES",
+      "PIERRE DE FERMAT", "KDDI CABLE INFINITY", "KDDI OCEAN LINK"), dict(),
+     "other cable ships: known by name, colours not checked, so the generic"),
+]
 # ---------------- tugs & the fuel run ----------------
 _TUGS = [
     (("FOSS",), dict(hull=(0.13, 0.36, 0.24), house=WHITE, funnel=(0.13, 0.36, 0.24), band=WHITE),
@@ -161,7 +170,7 @@ _TANKERS = [
 ]
 OPERATORS = [row + (kind,) for kind, rows in (
     ("container", _BOX_LINES), ("carcarrier", _CAR_CARRIERS), ("cruise", _CRUISE_LINES),
-    ("research", _RESEARCH), ("tug", _TUGS), ("tanker", _TANKERS)) for row in rows]
+    ("research", _RESEARCH), ("cable", _CABLE), ("tug", _TUGS), ("tanker", _TANKERS)) for row in rows]
 # Keys good enough to choose a colour once we know what kind of ship she is, but
 # too ordinary (or shared with another trade) to tell us the kind. NYK and MOL
 # names sail on box ships too; there are tankers called EVERGREEN STATE and
@@ -170,7 +179,7 @@ _COLOUR_ONLY = {"EVERGREEN", "EXPRESS", "HORIZON ", "MOLLER", "GEORGE II", "GEOR
                 "HIGHWAY", " ACE", "MOL ", "LEADER", "AUTO ", "NYK ", "MORNING", "TITUS"}
 # painter type -> whose fleets she could belong to (bulkers and the rest: nobody's)
 _KIND = {"container": "container", "cargo": "container", "carcarrier": "carcarrier",
-         "cruise": "cruise", "passenger": "cruise", "research": "research",
+         "cruise": "cruise", "passenger": "cruise", "research": "research", "cable": "cable",
          "tug": "tug", "atb": "tug", "workboat": "tug", "tanker": "tanker"}
 
 

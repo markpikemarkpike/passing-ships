@@ -170,6 +170,11 @@ def category(s):
                                     "ATLANTIS", "ROGER REVELLE", "SALLY RIDE", "BOB & BETTY",
                                     "OCEAN OBSERVER"))):
         return "research", "Research Vessel"
+    # AIS has no code for a cable ship: they sail as passenger, cargo or "other". liveries.py
+    # knows them by name. A hull that says it fishes, sails or is a pleasure boat is believed.
+    if t not in (30, 36, 37) and not (0 < hull_length(s) < 60) and \
+            liveries.operator_of(name, ("cable",), sure=True):
+        return "cable", "Cable Layer"
     if 60 <= t <= 69:
         if 0 < hull_length(s) < 60:              # the whale-watch boat is not a liner
             return "excursion", "Passenger Vessel"
@@ -220,6 +225,7 @@ PAINTER = {"container": "container", "cargo": "container", "bulk": "bulk",
            "research": "research", "tanker": "tanker", "cruise": "cruise",
            "sailing": "sailing", "fishing": "fishing", "general": "general",
            "naval": "naval", "motoryacht": "motoryacht", "atb": "atb",
+           "cable": "cable",
            "workboat": "workboat",   # pilot / SAR / patrol boats: the tug's hull, no tow
            "excursion": "excursion"} # party boats and small ferries: the motor yacht's hull
 CONTAINERISH = {"container", "cargo", "carcarrier", "bulk"}
@@ -255,7 +261,7 @@ def clean_dest(raw):
 
 
 RARE = {"cutter", "research", "cruise", "sailing", "fishing", "tug", "naval", "motoryacht", "atb",
-        "workboat", "excursion"}
+        "workboat", "excursion", "cable"}
 COMMON = {"container", "cargo", "bulk", "tanker", "carcarrier", "general"}
 SOURCE_DAYS = 3               # paint from anything sighted in the last N days
 KEEP_PAINTED = 500            # must outlast SOURCE_DAYS even at 24 a day; also "have we ever hung her"
@@ -454,7 +460,7 @@ def main(aside=()):
     s, cat, label = c["rec"], c["cat"], c["label"]
     known = hull_length(s)
     est = {"tug": 34, "atb": 185, "fishing": 24, "sailing": 14, "motoryacht": 30,
-           "cutter": 60, "research": 80, "cruise": 290, "naval": 155,
+           "cutter": 60, "research": 80, "cable": 140, "cruise": 290, "naval": 155,
            "carcarrier": 200, "container": 300, "tanker": 190, "bulk": 190,
            "general": 150, "workboat": 20}.get(cat, 180)
     length = known or est                              # never invent a fact silently

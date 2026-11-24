@@ -331,6 +331,24 @@ check("record: kept fields are cleaned", (_r["callsign"], _r["draught"], _r["imo
 check("record: small enough to save", len(json.dumps(_r)) < 600, True)
 check("record: the painters' extras still work", curator.extras(_r), {"draught_m": 7.5, "imo": 9301122})
 
+# ---------- cable ships (Nov 23 2026): AIS has no code for them, so by name ----------
+check("Cable Innovator broadcasts type 65 and is a cable ship, not a liner", curator.category(dict(mmsi=233933000, shiptype=65, shipname="CABLE INNOVATOR", to_bow=40, to_stern=105)), ("cable", "Cable Layer"))
+check("cable ships under other codes", [C(shiptype=t, mmsi=232000000, shipname="WAVE VENTURE") for t in (0, 70, 90)], ["cable"] * 3)
+check("a yacht or a troller with the name is believed", [C(shiptype=t, mmsi=367000000, shipname="CABLE VENTURE") for t in (37, 36, 30)], ["motoryacht", "sailing", "fishing"])
+check("ordinary names are left alone", [C(shiptype=t, mmsi=367000000, shipname=n) for t, n in ((60, "CABLE CAR QUEEN"), (70, "INNOVATOR"), (65, "CARNIVAL LUMINOSA"))], ["cruise", "bulk", "cruise"])
+check("a small boat is not a cable ship", C(shiptype=65, mmsi=367000000, shipname="CABLE VENTURE", to_bow=10, to_stern=10) != "cable", True)
+check("she can be painted and counts as unusual", ("cable" in curator.PAINTER, "cable" in curator.RARE), (True, True))
+check("cable ship prefix", N("Cable Innovator", "cable"), "C/S CABLE INNOVATOR")
+import scene as _sc2, light as _li2
+from watercolor import Canvas as _Cv
+_cs = dict(name="Cable Innovator", type="cable", length_m=145, speed_kn=8.0, mmsi=233933000, country="GB", date="23 NOVEMBER 2026", nmi=17.5)
+for _h in ("2026-11-23T00:25:00", "2026-11-22T13:00:00", "2026-11-22T16:45:00"):
+    for _hd in (148, 330):
+        _cv = _Cv(_sc2.W, _sc2.H, seed=7, k=1.0)
+        _sc2.paint_scene(_cv, dict(_cs, heading=_hd, light=_li2.for_iso(_h)), dict(wind_kn=12, wave_ft=8, fog=0.3, wind_dir="NW", label="x"), 7)
+        _a = _cv.img
+        check("cable ship: red hull on the sheet, %s heading %d" % (_h[11:16], _hd), bool((((_a[..., 0] - _a[..., 2]) > 0.10) & (_a[..., 0] > _a[..., 1] * 1.6)).sum() > 1500), True)
+
 # ---------- a missing font must not cost the painting ----------
 art_directions._FONT_CANDIDATES = [("/nonexistent/%s.ttf", "B", "R", 0, 0)]
 check("no font on the machine -> PIL's built-in face, not a crash", art_directions.helv(12) is not None, True)

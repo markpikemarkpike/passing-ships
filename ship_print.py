@@ -228,7 +228,7 @@ PAINTERS = {"container": paint_container_ship, "cargo": paint_container_ship,
 
 PREFIX = {"fishing": "F/V", "sailing": "S/V", "research": "R/V",
           "cutter": "USCGC", "military": "USS", "naval": "USS", "tug": "TUG",
-          "motoryacht": "M/Y", "atb": "ATB"}
+          "motoryacht": "M/Y", "atb": "ATB", "cable": "C/S"}
 # prefixes ships put in their own AIS name; she knows better than her type code
 _OWN_PREFIX = re.compile(r"(USCGC|USCG|CGC|CG|USS|USNS|WARSHIP|[RMFSTP]/[VTY]|[RM]\.V\.|TUG|ATB"
                          r"|[RMFS]V) +(?=\S)")

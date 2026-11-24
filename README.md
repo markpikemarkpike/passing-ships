@@ -30,7 +30,7 @@ No photos, no stock art, no generative image model. The paintings are procedural
 
 ![Three paintings as the program draws them: a container ship, a research vessel and a sailboat](docs/recent.jpg)
 
-- **Shape.** Fifteen kinds of vessel, from container ship to Coast Guard cutter to a tug with a barge on a towline. The research ship gets a gantry on the stern because research ships have one.
+- **Shape.** Sixteen kinds of vessel, from container ship to Coast Guard cutter to cable layer to a tug with a barge on a towline. The research ship gets a gantry on the stern because research ships have one.
 - **Colors.** ONE's magenta, Maersk's blue, Matson's navy. Container stacks are a mixed pile, because carriers lease most of their boxes. Even Maersk.
 - **Load.** Ships broadcast how deep they sit. An empty one rides high and shows its bottom paint.
 - **Age.** Older hulls get rust.
