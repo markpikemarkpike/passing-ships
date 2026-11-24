@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: "41 */3 * * *"
   workflow_dispatch:
+    inputs:
+      test:
+        description: Send yourself a test alert
+        type: boolean
+        default: false
 permissions:
   contents: read
   issues: write
@@ -22,3 +27,7 @@ jobs:
           gh api "repos/$GH_REPO/contents/.github/watch.py" -H "Accept: application/vnd.github.raw" > watch.py
           gh api "repos/$GH_REPO/contents/status.json?ref=heartbeat" -H "Accept: application/vnd.github.raw" > status.json || true
       - run: python3 watch.py status.json
+      - if: ${{ inputs.test }}
+        run: |
+          u=$(gh issue create --title "Passing Ships: test alert" --body "Only a test. If this reached you, alerts work." --assignee "$OWNER")
+          gh issue close "$u" --comment "Test over."
