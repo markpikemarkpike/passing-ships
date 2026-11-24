@@ -36,6 +36,8 @@ FLEET = {
                      speed_kn=17.9, mmsi=311001201, heading=157, country="BS", shiptype_text="Cruise Ship"),
   "research":   dict(name="Sikuliaq", type="research", length_m=80, dest="San Francisco",
                      speed_kn=9.6, mmsi=367444540, heading=140, country="US", shiptype_text="Research Vessel"),
+  "cable":      dict(name="Cable Innovator", type="cable", length_m=145, dest="San Francisco",
+                     speed_kn=8.2, mmsi=233933000, heading=148, country="GB", shiptype_text="Cable Layer"),
   "cutter":     dict(name="Terrapin", type="cutter", length_m=47, dest="Sea", speed_kn=18.0,
                      mmsi=369970000, heading=175, country="US", shiptype_text="Coast Guard Cutter"),
   "naval":      dict(name="John Paul Jones", type="naval", length_m=155, dest="San Diego",

@@ -222,6 +222,24 @@ def option_A2(ship, wx, path, scale=1.0):
     return out
 
 
+def facts(ship):
+    """'229 M · 10.2 KN · FOR OAKLAND', leaving out whatever she has not said (records from
+    Nov 24 2026, "v": 2; older ones keep the words they were hung with)."""
+    size = "%s%d M" % ("~" if ship.get("length_est") else "", ship["length_m"])
+    if ship.get("v", 1) < 2:
+        return "%s · %.1f KN · FOR %s" % (size, ship["speed_kn"], ship["dest"].upper())
+    if ship.get("tug_m"):
+        size = "%d M TUG" % ship["tug_m"]
+    parts = [size]
+    if not ship.get("speed_unknown"):
+        parts.append("%.1f KN" % ship["speed_kn"])
+    d = ship["dest"].upper()
+    if d and d != "SEA":
+        import ports
+        parts.append(d if d in ports.JOB else "FOR " + d)
+    return " · ".join(parts)
+
+
 def info_block(cv, ship, wx):
     """The A2 caption: compact Supergraphic type in the sky (shared by styles)."""
     x0, y0 = 34 * SC, 26 * SC
@@ -244,9 +262,7 @@ def info_block(cv, ship, wx):
     if flag_name:
         apply_ink(cv, text_mask(flag_name, helv(12, bold=False), (tx, y0 + 44 * SC),
                                 tracking=2), BLACK)
-    line3 = "%s%d M · %.1f KN · FOR %s" % ("~" if ship.get("length_est") else "",
-                                            ship["length_m"], ship["speed_kn"],
-                                            ship["dest"].upper())
+    line3 = facts(ship)
     apply_ink(cv, text_mask(line3, helv(12, bold=False), (x0 + 36 * SC, y0 + 63 * SC),
                             tracking=2), BLACK)
     if ship.get("spotted"):                              # when she passed, how far off
@@ -264,7 +280,8 @@ def info_block(cv, ship, wx):
                             anchor="ra", tracking=2), BLACK)
     if ship.get("radio_note"):                           # the receiver went quiet: say so
         apply_ink(cv, text_mask(ship["radio_note"], helv(10, bold=False),
-                                (W - 34 * SC, y0 + 53 * SC), anchor="ra", tracking=2), RED)
+                                (W - 34 * SC, y0 + 53 * SC), anchor="ra", tracking=2),
+                  BLACK if ship["radio_note"].startswith("QUIET SEA") else RED)   # red is for faults
 
 
 def stat_band_A(cv, ship):

@@ -1,4 +1,4 @@
-import sys, os, io, json, datetime, tempfile, time
+import sys, os, io, json, datetime, tempfile, time, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ["TZ"] = "PST8PDT,M3.2.0,M11.1.0"; time.tzset()   # the expected times below are Sea Ranch clock times
 os.environ["HOME"] = tempfile.mkdtemp()          # keep ~/.curator out of the real home
@@ -184,7 +184,7 @@ check("294 m passenger ship still is", C(shiptype=60, mmsi=311001201, shipname="
 check("passenger ship with no dimensions stays a cruise ship", C(shiptype=60, mmsi=311001201, shipname="X"), "cruise")
 check("511 is 'this big or bigger', not a length", (curator.hull_length(dict(to_bow=511, to_stern=511)), curator.hull_length(dict(to_bow=200, to_stern=100)), curator.hull_length({})), (0, 300, 0))
 check("FOR ORDERS does not print FOR FOR ORDERS", curator.clean_dest("FOR ORDERS"), "Orders")
-check("five letters are not always a LOCODE", [curator.clean_dest(d) for d in ("FOR ORDER", "TOKYO", "BUSAN", "OAKLAND>FOR ORDER", "USNTD", "US OAK", "CAPRR>USSFO")], ["Order", "Tokyo", "Busan", "Order", "Usntd", "Oakland", "San Francisco"])
+check("five letters are not always a LOCODE", [curator.clean_dest(d) for d in ("FOR ORDER", "TOKYO", "BUSAN", "OAKLAND>FOR ORDER", "USNTD", "US OAK", "CAPRR>USSFO")], ["Order", "Tokyo", "Busan", "Order", "Port Hueneme", "Oakland", "San Francisco"])
 check("two-letter words are not always prefixes", [N("My Girl", "fishing"), N("My Way", "motoryacht"), N("Mt Everest", "bulk"), N("Sv Rambler", "fishing"), N("Cg Marie", "fishing")],
       ["F/V MY GIRL", "M/Y MY WAY", "M/V MT EVEREST", "F/V SV RAMBLER", "F/V CG MARIE"])
 check("...except on the ship that would get that prefix anyway", [N("Mv Cosco Pacific", "container"), N("Sv Delos", "sailing"), N("Rv Sally Ride", "research"), N("Fv Sea Dancer", "fishing")],
@@ -193,18 +193,18 @@ check("...except on the ship that would get that prefix anyway", [N("Mv Cosco Pa
 # ---------- the feed is untrusted ----------
 R = curator.clean_record            # (the R class near the top is done with)
 check("control characters and length", (curator.tidy("EVIL\nLOG  LINE\x00\x07"), len(curator.tidy("A" * 60))), ("EVIL LOG LINE", 20))
-check("numbers that are not numbers become None", [R(dict(mmsi=1, lat=v))["lat"] for v in ("38.7", "x", None, True, float("nan"), float("inf"), [1])], [38.7, None, None, None, None, None, None])
-check("real numbers are left exactly as sent", (R(dict(mmsi="367000001", to_bow=200, speed=14.5))["mmsi"], R(dict(mmsi=1, to_bow=200))["to_bow"], R(dict(mmsi=1, speed=14.5))["speed"]), (367000001, 200, 14.5))
+check("numbers that are not numbers become None", [R(dict(mmsi=367000001, lat=v))["lat"] for v in ("38.7", "x", None, True, float("nan"), float("inf"), [1])], [38.7, None, None, None, None, None, None])
+check("real numbers are left exactly as sent", (R(dict(mmsi="367000001", to_bow=200, speed=14.5))["mmsi"], R(dict(mmsi=367000001, to_bow=200))["to_bow"], R(dict(mmsi=367000001, speed=14.5))["speed"]), (367000001, 200, 14.5))
 check("no usable MMSI, no ship", [R(x) for x in (None, [], "x", {}, dict(mmsi=0), dict(mmsi="abc"), dict(mmsi=-5), dict(mmsi=float("inf")), dict(mmsi=float("nan")))], [None] * 9)
-check("text that is not text is missing, not stringified", [(R(dict(mmsi=1, shipname=v, destination=v))["shipname"], R(dict(mmsi=1, destination=v))["destination"]) for v in ({"a": 1}, True, 0, ["X"])], [("", "")] * 4)
-check("country must be text", (R(dict(mmsi=1, country=5))["country"], R(dict(mmsi=1, country="US"))["country"]), ("", "US"))
+check("text that is not text is missing, not stringified", [(R(dict(mmsi=367000001, shipname=v, destination=v))["shipname"], R(dict(mmsi=367000001, destination=v))["destination"]) for v in ({"a": 1}, True, 0, ["X"])], [("", "")] * 4)
+check("country must be text", (R(dict(mmsi=367000001, country=5))["country"], R(dict(mmsi=367000001, country="US"))["country"]), ("", "US"))
 sightings.urllib.request.urlopen = lambda url, timeout=None: J(json.dumps(feed).encode())
 weather.fetch = lambda timeout=10: dict(weather.DEFAULT, label="x", fog_src="default")
-feed["ships"] = [None, 7, dict(mmsi="x"), dict(base, mmsi=2, lat="38.70", shiptype="70", shipname="GOOD\nSHIP"), dict(base, mmsi=3, lat={}, shipname="BAD")]
+feed["ships"] = [None, 7, dict(mmsi="x"), dict(base, mmsi=367000002, lat="38.70", shiptype="70", shipname="GOOD\nSHIP"), dict(base, mmsi=367000003, lat={}, shipname="BAD")]
 sightings.main(); a = sightings.load()
-check("one malformed record costs one ship, not the run", ("2" in a and a["2"]["name"], "3" in a), ("GOOD SHIP", False))
+check("one malformed record costs one ship, not the run", ("367000002" in a and a["367000002"]["name"], "367000003" in a), ("GOOD SHIP", False))
 c = curator.candidates(feed["ships"], [], datetime.datetime.now())
-check("curator reads the same feed without crashing", 2 in [x["mmsi"] for x in c], True)
+check("curator reads the same feed without crashing", 367000002 in [x["mmsi"] for x in c], True)
 
 # ---------- a ship the painter chokes on must not freeze the wall ----------
 import art_directions, panel, config
@@ -219,13 +219,13 @@ config.is_quiet = lambda h: False
 weather.fetch = lambda timeout=10: dict(weather.DEFAULT, label="x", fog_src="default")
 for f_ in (curator.STATE, sightings.ARCHIVE):
     if os.path.exists(f_): os.remove(f_)
-feed["ships"] = [dict(base, mmsi=10, shipname="CURSED", shiptype=36), dict(base, mmsi=11, shipname="FINE", shiptype=70, lat=38.9)]
+feed["ships"] = [dict(base, mmsi=367000010, shipname="CURSED", shiptype=36), dict(base, mmsi=367000011, shipname="FINE", shiptype=70, lat=38.9)]
 curator.urllib.request.urlopen = lambda url, timeout=None: J(json.dumps(feed).encode()) if "8100" in url else (_ for _ in ()).throw(OSError())
 curator.main(); st = curator.load_state()
 check("painter raised -> she is set aside and the next ship hangs the same hour", (tried, st.get("name"), [(p["name"], bool(p.get("failed"))) for p in st["painted"]]), (["Cursed", "Fine"], "Fine", [("Cursed", True), ("Fine", False)]))
 side = [json.load(open(os.path.join(curator.GALLERY, f_))) for f_ in sorted(os.listdir(curator.GALLERY)) if f_.endswith(".json")]
-check("each painting keeps the data it was painted from, and only finished paintings do", ([(d_["ship"]["name"], d_["ship"]["mmsi"], d_["wx"]["label"], d_["place"]) for d_ in side], [f_ for f_ in os.listdir(curator.GALLERY) if f_.endswith(".tmp")]), ([("Fine", 11, "x", "THE SEA RANCH")], []))
-tried.clear(); feed["ships"].append(dict(base, mmsi=12, shipname="THIRD", shiptype=30)); curator.main()
+check("each painting keeps the data it was painted from, and only finished paintings do", ([(d_["ship"]["name"], d_["ship"]["mmsi"], d_["wx"]["label"], d_["place"]) for d_ in side], [f_ for f_ in os.listdir(curator.GALLERY) if f_.endswith(".tmp")]), ([("Fine", 367000011, "x", "THE SEA RANCH")], []))
+tried.clear(); feed["ships"].append(dict(base, mmsi=367000012, shipname="THIRD", shiptype=30)); curator.main()
 check("...and she is not retried next hour", tried, ["Third"])
 # a fault in the frame (full card, broken library) fails for every ship and must not use up the pool
 for f_ in (curator.STATE, sightings.ARCHIVE):
@@ -233,12 +233,12 @@ for f_ in (curator.STATE, sightings.ARCHIVE):
 def allboom(ship, wx, path, scale=1.0):
     tried.append(ship["name"]); raise OSError("No space left on device")
 art_directions.option_A2 = allboom
-feed["ships"] = [dict(base, mmsi=20 + i, shipname="SHIP %d" % i, shiptype=70) for i in range(6)]
+feed["ships"] = [dict(base, mmsi=367000020 + i, shipname="SHIP %d" % i, shiptype=70) for i in range(6)]
 tried.clear(); curator.main(); curator.main()
 check("every ship fails -> three tries an hour, nobody blamed", (len(tried), curator.load_state().get("painted", [])), (6, []))
 art_directions.option_A2 = boom; tried.clear(); curator.main()
 check("...and the pool is intact when the fault clears", (len(tried), len(curator.candidates(feed["ships"], curator.load_state()["painted"], datetime.datetime.now()))), (1, 5))
-check("a failed attempt does not count as the last type hung", curator.pick([dict(mmsi=1, cat="sailing", at=None, nmi=1)], [dict(mmsi=9, cat="sailing", failed=True)])["mmsi"], 1)
+check("a failed attempt does not count as the last type hung", curator.pick([dict(mmsi=367000001, cat="sailing", at=None, nmi=1)], [dict(mmsi=367000009, cat="sailing", failed=True)])["mmsi"], 367000001)
 
 check("the offline note counts hours, then gives a date that cannot go stale", [curator.offline_text("2026-09-24T07:00:16", h) for h in (0.5, 5.2, 47, 60, 492)],
       ["RADIO OFFLINE", "RADIO OFFLINE 5 HRS", "RADIO OFFLINE 47 HRS", "RADIO OFFLINE SINCE 24 SEP", "RADIO OFFLINE SINCE 24 SEP"])
@@ -307,11 +307,11 @@ def _health(body):
     _ur.urlopen = lambda *a, **k: io.BytesIO(body if isinstance(body, bytes) else json.dumps(body).encode())
     try: return curator.read_health()
     finally: _ur.urlopen = _real_open
-check("health: an honest report comes through", _health({"verdict": "DEAF", "detail": "noise floor flat", "weak_streak": 7}),
-      {"verdict": "DEAF", "detail": "noise floor flat", "weak_streak": 7})
+check("health: an honest report comes through", _health({"verdict": "DEAF", "detail": "noise floor flat", "silent_h": 13.5}),
+      {"verdict": "DEAF", "detail": "noise floor flat", "silent_h": 13.5})
 check("health: a forged log line is flattened and cut", _health({"verdict": "DEAF", "detail": "x\n2026-01-01 PANEL FAILED\x1b[2J" + "A" * 500})["detail"],
       ("x 2026-01-01 PANEL FAILED [2J" + "A" * 500)[:120])
-check("health: a silly streak is no opinion", [_health({"weak_streak": w})["weak_streak"] for w in ("9", 10 ** 9, -1, True, None, 6.5)], [0] * 6)
+check("health: a silly number of hours is no opinion", [_health({"silent_h": w})["silent_h"] for w in ("9", 10 ** 9, -1, True, None)], [None] * 5)
 check("health: not a dict, not JSON, nobody home", [_health([1, 2]), _health(b"<html>"), _health(b"")], [{}, {}, {}])
 
 # ---------- the ship feed is bounded, and only named fields are kept ----------
@@ -330,6 +330,149 @@ check("record: fields nobody named do not ride along", sorted(set(_r) - set(cura
 check("record: kept fields are cleaned", (_r["callsign"], _r["draught"], _r["imo"], _r["status"], _r["eta_day"]), ("WDL1234", 7.5, 9301122, None, None))
 check("record: small enough to save", len(json.dumps(_r)) < 600, True)
 check("record: the painters' extras still work", curator.extras(_r), {"draught_m": 7.5, "imo": 9301122})
+
+# ---------- cable ships (Nov 23 2026): AIS has no code for them, so by name ----------
+check("Cable Innovator broadcasts type 65 and is a cable ship, not a liner", curator.category(dict(mmsi=233933000, shiptype=65, shipname="CABLE INNOVATOR", to_bow=40, to_stern=105)), ("cable", "Cable Layer"))
+check("cable ships under other codes", [C(shiptype=t, mmsi=232000000, shipname="WAVE VENTURE") for t in (0, 70, 90)], ["cable"] * 3)
+check("a yacht or a troller with the name is believed", [C(shiptype=t, mmsi=367000000, shipname="CABLE VENTURE") for t in (37, 36, 30)], ["motoryacht", "sailing", "fishing"])
+check("ordinary names are left alone", [C(shiptype=t, mmsi=367000000, shipname=n) for t, n in ((60, "CABLE CAR QUEEN"), (70, "INNOVATOR"), (65, "CARNIVAL LUMINOSA"))], ["cruise", "bulk", "cruise"])
+check("a small boat is not a cable ship", C(shiptype=65, mmsi=367000000, shipname="CABLE VENTURE", to_bow=10, to_stern=10) != "cable", True)
+check("she can be painted and counts as unusual", ("cable" in curator.PAINTER, "cable" in curator.RARE), (True, True))
+check("cable ship prefix", N("Cable Innovator", "cable"), "C/S CABLE INNOVATOR")
+import scene as _sc2, light as _li2
+from watercolor import Canvas as _Cv
+_cs = dict(name="Cable Innovator", type="cable", length_m=145, speed_kn=8.0, mmsi=233933000, country="GB", date="23 NOVEMBER 2026", nmi=17.5)
+for _h in ("2026-11-23T00:25:00", "2026-11-22T13:00:00", "2026-11-22T16:45:00"):
+    for _hd in (148, 330):
+        _cv = _Cv(_sc2.W, _sc2.H, seed=7, k=1.0)
+        _sc2.paint_scene(_cv, dict(_cs, heading=_hd, light=_li2.for_iso(_h)), dict(wind_kn=12, wave_ft=8, fog=0.3, wind_dir="NW", label="x"), 7)
+        _a = _cv.img
+        check("cable ship: red hull on the sheet, %s heading %d" % (_h[11:16], _hd), bool((((_a[..., 0] - _a[..., 2]) > 0.10) & (_a[..., 0] > _a[..., 1] * 1.6)).sum() > 1500), True)
+
+# ---------- Nov 24 2026: honest captions, real passers first ----------
+import copy, layout, ports, backfill, art_directions as _A3
+weather.fetch = lambda timeout=10, at=None: dict(weather.DEFAULT, label="x" if at is None else "then", fog_src="default")
+check("how far you can see from 30 m: a big ship, a coaster, a boat", [round(curator.visible_nmi(m)) for m in (230, 100, 40, 12)], [25, 22, 19, 16])
+_rec = lambda **k: dict(dict(mmsi=636000001, shipname="BIG ONE", shiptype=80, to_bow=200, to_stern=30, lat=38.7, lon=-123.8), **k)
+_c = lambda nmi, cat="tanker", at="2026-11-20T12:00:00", mmsi=636000001, live=False, **k: dict(rec=_rec(mmsi=mmsi, **k), cat=cat, label="X", nmi=nmi, at=at, mmsi=mmsi, live=live, wx=None)
+_n = datetime.datetime(2026, 11, 20, 15, 0)
+check("in sight she passes and is spotted; below the horizon she is heard",
+      [curator.spotted_text(x, _n) for x in (_c(12, live=True), _c(95, live=True), _c(22.4), _c(71))],
+      ["PASSING NOW · 12 NMI OFF", "HEARD NOW · 95 NMI OFF", "SPOTTED 3 HRS AGO · 22 NMI OFF", "HEARD 3 HRS AGO · 71 NMI OFF"])
+check("a 12 m boat at 20 miles is not in sight, a tanker is", (curator.in_sight(_c(20, "motoryacht", to_bow=8, to_stern=4)), curator.in_sight(_c(20))), (False, True))
+_day, _far, _nite = _c(14, mmsi=636000001), _c(80, "cutter", mmsi=636000002), _c(10, "bulk", at="2026-11-20T02:00:00", mmsi=636000003)
+check("a tanker in sight beats a cutter eighty miles off", curator.pick([_far, _day], [])["mmsi"], 636000001)
+check("daylight beats dark when the wall has had a night piece lately", curator.pick([_nite, _day], [dict(mmsi=1, cat="sailing", dark=True)])["mmsi"], 636000001)
+check("...and a night piece is welcome when it has not", curator.level(_nite, 0) == curator.level(_day, 0) == 0, True)
+check("far ships still hang when there is nothing nearer", curator.pick([_far], [])["mmsi"], 636000002)
+check("never the same type twice, even for a nearer one, when there is a choice", curator.pick([_c(10), _c(60, "bulk", mmsi=636000004)], [dict(mmsi=9, cat="tanker")])["cat"], "bulk")
+_e = dict(record=_rec(), closest_nmi=9.0, closest_at="2026-11-20T02:00:00", wx=None, day=dict(nmi=15.0, at="2026-11-20T09:00:00", record=_rec(speed=9), wx={"label": "d"}))
+check("closest in the dark, but a fair sight by day: hang the day", curator.moment(_e, "tanker")["at"], "2026-11-20T09:00:00")
+check("...unless by day she was long gone", curator.moment(dict(_e, day=dict(_e["day"], nmi=44.0)), "tanker")["at"], "2026-11-20T02:00:00")
+check("...or she is a liner with her lights on", curator.moment(_e, "cruise")["at"], "2026-11-20T02:00:00")
+check("damaged daylight data is no data", [curator.moment(dict(_e, day=d_), "tanker")["nmi"] for d_ in ("x", {}, {"nmi": "9"}, {"nmi": 9, "record": 5})], [9.0] * 4)
+
+# ---------- destinations and bad data ----------
+check("codes become places", [ports.clean_dest(x) for x in ("CA PMA", "US VDZ", "JP THS", "USMRZ", "US LGB-CA RTB", "USSCK STOCKTON", "US RWC>CA PMA", "SFOA9", "SAN_FRANCISCO,CA", "LA\\LB", "USA OAK", "US ASTORIA")],
+      ["Port McNeill", "Valdez", "Toyohashi", "Martinez", "Roberts Bank", "Stockton", "Port McNeill", "San Francisco", "San Francisco", "Los Angeles", "Oakland", "Astoria"])
+check("CNTXG is Tianjin, not Taicang", ports.clean_dest("CNTXG"), "Tianjin Xingang")
+check("what nobody can read is left out, not printed", [ports.clean_dest(x) for x in ("", None, "----------", "CNHSKTP", "CA_EUR", "ROD 3", "UX OAK", "USRD4", "FISHING", "12345", "SEA", 7)], ["Sea"] * 12)
+_f = lambda **k: _A3.facts(dict(dict(v=2, length_m=230, speed_kn=10.2, dest="Oakland"), **k))
+check("the facts line leaves out what she has not said", [_f(), _f(dest="Sea"), _f(speed_unknown=True), _f(length_est=True, dest="Sea"), _f(dest="Cable Recovery"), _f(tug_m=39)],
+      ["230 M · 10.2 KN · FOR OAKLAND", "230 M · 10.2 KN", "230 M · FOR OAKLAND", "~230 M · 10.2 KN", "230 M · 10.2 KN · CABLE RECOVERY", "39 M TUG · 10.2 KN · FOR OAKLAND"])
+check("a record from before Nov 24 keeps the words it was hung with", _A3.facts(dict(length_m=12, speed_kn=4.4, dest="Sea")), "12 M · 4.4 KN · FOR SEA")
+_b = curator.build_ship(_c(14, "fishing", speed=31.3, to_bow=15, to_stern=6), _n)
+check("a fishing boat doing 31 knots: the number goes, the boat stays", (_b["speed_kn"], _b.get("speed_unknown"), _b["length_m"]), (0.0, True, 21))
+_b = curator.build_ship(_c(18, "atb", speed=7.9, to_bow=20, to_stern=19, destination="US PDX"), _n)
+check("a tug's own length is not the length of tug and barge", (_b["length_m"], _b["tug_m"], _A3.facts(_b)), (185, 39, "39 M TUG · 7.9 KN · FOR PORTLAND"))
+check("only ship stations are ships: buoys, shore stations, aircraft and garbage are not", [curator.clean_record(dict(mmsi=m)) is None for m in (993692416, 3669143, 111232506, 81922939, 893700003, 970012345, 636022754, 201000000)], [True] * 6 + [False] * 2)
+check("a garbled name waits for a clean packet", [curator.real_name(x) for x in ("DEYUM*>V8Q49", "SSI_INTERCEPTOR", "----", "LADY J!", "O'HARA & SON", None, "")], ["", "SSI INTERCEPTOR", "", "LADY J!", "O'HARA & SON", "", ""])
+check("Ile de Sein is a cable ship, whatever she broadcasts", curator.category(dict(mmsi=226235000, shipname="ILE DE SEIN", shiptype=70, to_bow=100, to_stern=40))[0], "cable")
+check("a President is a box ship; a small one is not", [curator.category(dict(mmsi=338000000, shipname="PRESIDENT REAGAN", shiptype=70, to_bow=n, to_stern=5))[0] for n in (250, 100)], ["container", "bulk"])
+check("a bulker or tanker owner we know keeps her colours, a stranger rolls her own",
+      [_sc.cargo_livery(dict(name=n_, type=t_, mmsi=5))["note"][:12] for n_, t_ in (("Navios Cyan", "bulk"), ("Alaskan Legend", "tanker"), ("Ocean Nobody", "bulk"))], ["Navios: the ", "Alaska Tanke", "owner unknow"])
+check("state names are whole names: OHIO is Crowley's, OHIOAN is not", [liveries.operator_of(x, ("tanker",)) is not None for x in ("OHIO", "OHIOAN", "LOUISIANA")], [True, False, True])
+
+# ---------- what the wall says about the radio ----------
+_hl = lambda **k: (lambda *a, **kw: io.BytesIO(json.dumps(k).encode()))
+def _note(st, live, ok_, **h):
+    _ur.urlopen = _hl(**h) if h else (lambda *a, **k: (_ for _ in ()).throw(OSError()))
+    try: return curator.note_for(st, _n, live, ok_)
+    finally: _ur.urlopen = _real_open
+check("a silent sea is a quiet sea, not a broken antenna", [_note({}, [], True, verdict="QUIET", silent_h=h_) for h_ in (2.0, 5.5, 8.7)], [None, "QUIET SEA · 6 HRS", "QUIET SEA · 9 HRS"])
+check("the radio says so when it is really deaf, or its board is dead", [_note({}, [], True, verdict=v_, silent_h=14.0) for v_ in ("DEAF", "FAULT")], ["NOTHING HEARD 14 HRS · CHECK ANTENNA", "RECEIVER NOT ANSWERING"])
+check("the radio Pi not answering is still said first", _note(dict(feed_down_since="2026-11-20T10:00:00"), [], False), "RADIO OFFLINE 5 HRS")
+_s = dict(last_live_at="2026-11-12T09:00:00", last_run_at="2026-11-12T09:00:00")
+check("eleven days unplugged is not eleven days of silence", (_note(_s, [], True), _s["last_live_at"]), (None, "2026-11-20T15:00:00"))
+
+# ---------- the radio's diary, and filling in from it ----------
+import importlib.util
+_sp = importlib.util.spec_from_file_location("passages", os.path.join(os.path.dirname(os.path.abspath(__file__)), "radio", "passages.py"))
+_P = importlib.util.module_from_spec(_sp); _sp.loader.exec_module(_P)
+_at = lambda h, m=0: datetime.datetime(2026, 11, 18, h, m)
+_look = lambda lon, **k: [dict(dict(mmsi=368126190, lat=38.72, lon=lon, last_signal=4, speed=8, heading=330), **k)]
+_d = {}
+_P.note(_d, _look(-124.2), _at(3)); _P.note(_d, _look(-123.9), _at(4)); _P.note(_d, _look(-124.0, shipname="GERONIMO", to_bow=20, to_stern=19, shiptype=31), _at(9)); _P.note(_d, _look(-124.4), _at(10))
+_g = _d["368126190"]
+check("the diary keeps her closest, and her closest by daylight", (_g["nmi"], _g["at"][11:16], _g["day"]["nmi"], _g["day"]["at"][11:16]), (21.1, "04:00", 25.8, "09:00"))
+check("...and her name, heard later, is put on both", (_g["record"]["shipname"], _g["day"]["record"]["shipname"]), ("GERONIMO", "GERONIMO"))
+_before = len(_d); _P.note(_d, [None, 5, {}, dict(mmsi=993692416, lat=38, lon=-123), dict(mmsi=636000009, lat=91, lon=181), dict(mmsi=636000009, lat=38.7, lon=-110, last_signal=1), dict(mmsi=636000009, lat=38.7, lon=-123.9, last_signal=4000)], _at(11))
+check("...and nothing that is not a ship in range, now", len(_d), _before)
+check("the diary knows day from night in November", [_P.daylight(_at(h_)) for h_ in (5, 8, 12, 16, 18)], [False, True, True, True, False])
+check("a diary entry off the network is checked field by field", [sightings.entry(x) is None for x in (None, {}, dict(nmi=5, at="x", record=_rec()), dict(nmi=True, at="2026-11-18T04:00:00", record=_rec()), dict(nmi=9e9, at="2026-11-18T04:00:00", record=_rec()), dict(nmi=5, at="2026-11-18T04:00:00", record={}), _g)], [True] * 6 + [False])
+sightings.passages = lambda day, timeout=10: copy.deepcopy(_d) if day == "2026-11-18" else {}
+_arch = {}
+check("back after a power cut, the missed ships are in the archive with the weather of then",
+      (sightings.catch_up(_arch, datetime.datetime(2026, 11, 17, 9), datetime.datetime(2026, 11, 19, 9), sightings.weather_then()), _arch["368126190"]["name"], _arch["368126190"]["wx"]["label"], _arch["368126190"]["day"]["at"][:13]),
+      (1, "GERONIMO", "then", "2026-11-18T09"))
+check("...once", sightings.catch_up(_arch, datetime.datetime(2026, 11, 17, 9), datetime.datetime(2026, 11, 19, 9), sightings.weather_then()), 0)
+for f_ in os.listdir(curator.GALLERY): os.remove(os.path.join(curator.GALLERY, f_))
+for n_ in ("20261117_0900_a_1.png", "20261119_0900_b_2.png"): open(os.path.join(curator.GALLERY, n_), "w").close()
+_pic = lambda ship, wx, path: open(path, "w").close()
+_now2 = datetime.datetime(2026, 11, 20, 0, 8)
+check("only finished days with no painting are blank, and none before the first painting", [d_.isoformat() for d_ in backfill.blank_days(_now2)], ["2026-11-18"])
+check("a blank day gets one painting, dated when she passed, marked backfilled", (backfill.main(_now2, _pic), sorted(f_ for f_ in os.listdir(curator.GALLERY) if f_.startswith("20261118"))),
+      (1, ["20261118_0900_geronimo_368126190.json", "20261118_0900_geronimo_368126190.png"]))
+_j = json.load(open(os.path.join(curator.GALLERY, "20261118_0900_geronimo_368126190.json")))
+check("...in that day's light and weather, saying when", (_j["backfilled"], _j["wx"]["label"], _j["ship"]["spotted"], _j["ship"]["light"]["name"]), ("2026-11-20", "then", "HEARD WED 9:00 AM · 26 NMI OFF", "morning"))
+check("...and not twice", backfill.main(_now2, _pic), 0)
+
+# ---------- the buoy's memory ----------
+weather.fetch = _real_fetch; weather.MAX_AGE_H = 3.0
+F["46014"] = HDR + "2026 11 20 12 00 310 4.0 5.0 2.0 MM MM MM 1016 15.0 14.0 12.0 MM MM MM\n2026 11 18 17 00 180 9.0 12.0 4.0 MM MM MM 1016 15.0 14.0 12.0 MM MM MM\n2026 11 18 16 00 180 1.0 2.0 1.0 MM MM MM 1016 15.0 14.0 12.0 MM MM MM\n"
+weather.urllib.request.urlopen = lambda url, timeout=None: io.BytesIO(F["46014"].encode()) if "46014" in url else (_ for _ in ()).throw(OSError())
+_w = weather.fetch(at="2026-11-18T09:10:00")                # 17:10 UTC
+check("weather at a past moment is that moment's, not today's", (_w["wind_kn"], _w["wave_ft"], _w["wind_dir"]), (17.5, 13.1, "S"))
+check("a moment the buoy has no row for admits it", weather.fetch(at="2026-11-10T09:10:00")["src"]["wind"], "default")
+weather.urllib.request.urlopen = _real_open
+
+# ---------- layouts and rough water ----------
+_sh = lambda i, **k: dict(dict(name="SHIP %d" % i, type="tanker", length_m=180, nmi=14.0, spotted="S %d" % i), **k)
+_looks = collections.Counter(layout.choose(_sh(i))["look"] for i in range(300))
+check("many looks, none of them most of the wall", (len(_looks) >= 3, max(_looks.values()) < 150), (True, True))
+check("the same painting always gets the same look", layout.choose(_sh(7)), layout.choose(_sh(7)))
+check("close looks only for ships that are close", {layout.choose(_sh(i, nmi=30.0))["look"] for i in range(300)} & {"close"}, set())
+def _paint(lay, wave, typ="tanker", L=180, hdg=150):
+    p_ = os.path.join(tempfile.mkdtemp(), "l.png")
+    _real_A2(dict(v=2, name="Layout Test", type=typ, length_m=L, dest="Sea", speed_kn=12, date="X", mmsi=1, heading=hdg, country="", shiptype_text="X", nmi=10, spotted="", light=_lt.for_iso("2026-11-20T13:00:00"), layout=lay),
+             dict(label="x", wind_kn=12, wind_dir="NW", wave_ft=wave, fog=0.15), p_)
+    return np.asarray(_Im.open(p_).convert("RGB")).astype(int)
+_mid = lambda a_: float(np.average(np.arange(800), weights=(a_[230:285].mean(axis=2) < 95).sum(axis=0) + 1e-6))
+_ar, _le = _paint({"x": .6, "zoom": 1, "look": "arriving"}, 4), _paint({"x": .36, "zoom": 1, "look": "leaving"}, 4)
+check("arriving sits right, leaving sits left, and northbound is the mirror of it", (_mid(_ar) > 420, _mid(_le) < 340, _mid(_paint({"x": .6, "zoom": 1, "look": "arriving"}, 4, hdg=340)) < 380), (True,) * 3)
+check("a close look stays clear of the caption, whatever she is", [bool((_paint({"x": .62, "zoom": 1.45, "look": "close"}, 4, t_, n_)[40:118, 400:640].mean(axis=2) < 120).sum() < 25) for t_, n_ in (("container", 366), ("cruise", 300), ("tanker", 230), ("carcarrier", 200))], [True] * 4)
+check("a gale sea is rougher than a calm one", float(np.abs(np.diff(_paint({"x": .5, "zoom": 1, "look": "middle"}, 17)[320:470].mean(axis=2), axis=0)).mean()) > 1.15 * float(np.abs(np.diff(_paint({"x": .5, "zoom": 1, "look": "middle"}, 3)[320:470].mean(axis=2), axis=0)).mean()), True)
+
+# ---------- the alarm ----------
+_spw = importlib.util.spec_from_file_location("watch", os.path.join(os.path.dirname(os.path.abspath(__file__)), "alerts", "watch.py"))
+_W = importlib.util.module_from_spec(_spw); _spw.loader.exec_module(_W)
+_u = datetime.datetime(2026, 11, 24, 12, 0, tzinfo=datetime.timezone.utc)
+_hb = lambda hrs=1, **r: dict(at=(_u - datetime.timedelta(hours=hrs)).isoformat(), ran_last=(_u - datetime.timedelta(hours=hrs, minutes=20)).replace(tzinfo=None).isoformat(), radio=dict(dict(reachable=True, verdict="OK", silent_h=0.1), **r))
+check("all well, nothing said", [_W.wrong(_hb(), _u), _W.wrong(_hb(verdict="QUIET", silent_h=8.0), _u)], [{}, {}])
+check("each trouble is its own", [list(_W.wrong(x, _u)) for x in (_hb(8), _hb(reachable=False), _hb(verdict="FAULT"), _hb(verdict="DEAF", silent_h=14), None, {}, [1], dict(at="x"))],
+      [["frame"], ["radio"], ["board"], ["antenna"], ["frame"], ["frame"], ["frame"], ["frame"]])
+check("said once, and unsaid when it ends", (_W.plan({"frame": "x"}, {}), _W.plan({"frame": "x"}, {"frame": 4}), _W.plan({}, {"frame": 4})), ([("open", "frame", "x")], [], [("close", "frame", 4)]))
+check("a silent frame cannot clear the radio's trouble", _W.plan({"frame": "x"}, {"radio": 3}), [("open", "frame", "x")])
 
 # ---------- a missing font must not cost the painting ----------
 art_directions._FONT_CANDIDATES = [("/nonexistent/%s.ttf", "B", "R", 0, 0)]

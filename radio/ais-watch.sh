@@ -2,14 +2,15 @@
 # ais-watch.sh -- message-rate health + recovery watchdog for the radio Pi.
 # Runs three times an hour via ais-watch.timer (:37 :47 :57).
 #
-# Verdicts written to ~/status/health.json (served on :8101; curator.py reads
-# verdict=="DEAF" -> CHECK ANTENNA CONNECTOR, weak_streak>=6 (9am-7pm) ->
-# ANTENNA WEAK N HRS):
-#   OK   - >=1 AIS msg decoded in the last 60 min.
-#   WEAK - 0 msgs in the last 60 min. A quiet coast at night is legitimately
-#          this quiet, so WEAK alone is not an alarm; the streak is.
-#   DEAF - 0 msgs for QUIET_HRS_BEFORE_CYCLE hours AND the recovery below did
-#          not bring traffic back by the next run.
+# Verdicts written to ~/status/health.json (served on :8101; curator.py reads them):
+#   OK    - >=1 AIS msg decoded in the last 60 min.
+#   QUIET - none in the last 60 min. Not a fault: this coast goes silent for hours
+#           (8.7 h was the longest, Oct-Nov 2026, with a good antenna).
+#   DEAF  - silent for DEAF_AFTER_H, and for half as long again as the longest silence
+#           of the last 14 days, and a receiver restart did not help. Look at the antenna.
+#   FAULT - the receiver board did not answer after a restart (only where BANNER says
+#           what its answer looks like in the log). Look at the board, not the antenna.
+# silent_h in health.json is hours since the last message, whatever the verdict.
 #
 # Recovery, mildest first. Each step is rate-limited; none can loop tightly.
 #   1. after QUIET_HRS_BEFORE_CYCLE silent hours: restart the receiver, and with
@@ -36,13 +37,15 @@ HUB_ALL=${HUB_ALL:-}
 DUTY_CYCLE=${DUTY_CYCLE:-$(systemctl is-enabled dongle-off.timer >/dev/null 2>&1 && echo 1 || echo 0)}
 QUIET_HRS_BEFORE_CYCLE=${QUIET_HRS_BEFORE_CYCLE:-4}
 CYCLE_COOLDOWN_MIN=${CYCLE_COOLDOWN_MIN:-170}
+DEAF_AFTER_H=${DEAF_AFTER_H:-12}
+BANNER=${BANNER:-}                        # e.g. "dAISy": what the board says in the log when it starts
 REBOOT_AFTER_H=${REBOOT_AFTER_H:-0}
 NET_REBOOT_AFTER_MIN=${NET_REBOOT_AFTER_MIN:-0}
 STAMP=$(date +%Y-%m-%dT%H:%M)
 MIN=$(date +%-M)
 if [ "$DUTY_CYCLE" = 1 ] && [ "$MIN" -ge 5 ] && [ "$MIN" -lt 30 ]; then exit 0; fi   # resting; nothing to judge
 export HEALTH LOG STATEF RECOVER HUB_LOC HUB_PORT HUB_ALL QUIET_HRS_BEFORE_CYCLE CYCLE_COOLDOWN_MIN \
-       REBOOT_AFTER_H NET_REBOOT_AFTER_MIN STAMP
+       REBOOT_AFTER_H NET_REBOOT_AFTER_MIN STAMP DEAF_AFTER_H BANNER BANNER_SEEN
 mkdir -p "$(dirname "$HEALTH")"
 
 msgs_since() { # $1 = "N min ago"
@@ -53,6 +56,11 @@ M60=$(msgs_since "60 min ago")
 MQUIET=$(msgs_since "$QUIET_HRS_BEFORE_CYCLE hours ago")
 MBOOT=0; [ "$REBOOT_AFTER_H" != 0 ] && MBOOT=$(msgs_since "$REBOOT_AFTER_H hours ago")
 UP=$(systemctl is-active ais-catcher)
+BANNER_SEEN=1
+if [ -n "$BANNER" ]; then                 # since the receiver last started
+  SINCE=$(systemctl show ais-catcher -p ActiveEnterTimestamp --value 2>/dev/null)
+  [ -n "$SINCE" ] && BANNER_SEEN=$(journalctl -u ais-catcher --since "$SINCE" --no-pager 2>/dev/null | grep -c "SERIALPORT.*$BANNER")
+fi
 NET=skip
 if [ "$NET_REBOOT_AFTER_MIN" != 0 ]; then
   GW=$(ip route 2>/dev/null | awk '/^default/{print $3; exit}')
@@ -67,7 +75,6 @@ E = os.environ
 H, S, LOG, stamp = E["HEALTH"], E["STATEF"], E["LOG"], E["STAMP"]
 qh, cool = float(E["QUIET_HRS_BEFORE_CYCLE"]), float(E["CYCLE_COOLDOWN_MIN"])
 reboot_h, net_min = float(E["REBOOT_AFTER_H"]), float(E["NET_REBOOT_AFTER_MIN"])
-RUNS_PER_HOUR = 3                                   # ais-watch.timer
 def load(p):
     try: return json.load(open(p))
     except Exception: return {}
@@ -86,10 +93,18 @@ detail = f"{m60} msgs/60min, {mquiet} msgs/{qh:g}h, service {up}, up {uptime_h:.
 if up != "active":
     sudo("systemctl", "restart", "ais-catcher")
     log(f"SERVICE-DOWN ({up}) -> restarted")
+last = st.get("last_traffic")
+silent_h = 0.0 if m60 > 0 else (now - last) / 3600 if last else uptime_h
+past = [x for x in st.get("silences", []) if now - x[0] < 14 * 86400]       # [when it ended, how many hours]
+deaf_h = max(float(E["DEAF_AFTER_H"]), 1.5 * max([x[1] for x in past], default=0))
 if m60 > 0:
+    if last and now - last >= 2 * 3600:
+        past.append([now, round((now - last) / 3600, 1)])
     verdict = "OK"; st["last_traffic"] = now; st.pop("cycled_at", None)
 else:
-    verdict = "WEAK"
+    verdict = "QUIET"
+    if not last:
+        st["last_traffic"] = now - uptime_h * 3600
     last_cycle = st.get("cycled_at", 0)
     # the journal only reaches back to boot: silence shorter than the window proves nothing
     if mquiet == 0 and uptime_h >= qh and (now - last_cycle) / 60 >= cool:
@@ -108,9 +123,11 @@ else:
         st["cycled_at"] = now; cycled = True
         log(f"QUIET {qh:g}h+ -> {how}")
         detail += f"; {how} this run"
-    elif mquiet == 0 and last_cycle and st.get("last_traffic", 0) < last_cycle and (now - last_cycle) > 15 * 60:
-        verdict = "DEAF"
-        detail += "; recovery did not restore traffic"
+    if mquiet == 0 and st.get("cycled_at", 0) > st["last_traffic"] and (last_cycle or cycled):
+        if last_cycle and E.get("BANNER") and E.get("BANNER_SEEN") == "0" and now - last_cycle > 5 * 60:
+            verdict = "FAULT"; detail += "; the receiver board is not answering"
+        elif last_cycle and silent_h >= deaf_h:
+            verdict = "DEAF"; detail += f"; silent {silent_h:.1f}h, limit {deaf_h:.1f}h, restart did not help"
     if reboot_h and mboot == 0 and uptime_h >= reboot_h:
         reboot_why = f"no AIS traffic in {reboot_h:g}h"
 if net == "up":
@@ -124,10 +141,9 @@ elif net == "down":
         log("NET-DOWN -> bounced wifi")
     elif down_min >= net_min and uptime_h * 60 >= net_min:
         reboot_why = reboot_why or f"gateway unreachable {down_min:.0f} min"
-runs = prev.get("weak_runs", 0) + 1 if verdict in ("WEAK", "DEAF") else 0
-# counted in runs, published in hours, so the frame's ANTENNA WEAK N HRS stays honest
-save(H, {"stamp": stamp, "verdict": verdict, "weak_streak": runs // RUNS_PER_HOUR,
-         "weak_runs": runs, "msgs_60min": m60, "uptime_h": round(uptime_h, 1), "detail": detail})
+save(H, {"stamp": stamp, "verdict": verdict, "silent_h": round(silent_h, 1), "deaf_after_h": round(deaf_h, 1),
+         "msgs_60min": m60, "uptime_h": round(uptime_h, 1), "detail": detail})
+st["silences"] = past
 save(S, st)
 log(f"{verdict}  {detail}" + ("  [CYCLED]" if cycled else ""))
 if reboot_why:

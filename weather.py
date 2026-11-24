@@ -28,6 +28,7 @@ URL = BASE % HOME                 # kept for anything that imported it
 LOOKBACK_ROWS = 14                # ~2 h at the 10-minute cadence
 MAX_AGE_H = 3.0                   # a reading older than this is treated as missing
 MAX_BYTES = 200_000               # the newest rows are at the top; never need more
+MAX_BYTES_PAST = 1_500_000       # all 45 days, when asked about the past
 DEFAULT = dict(wind_kn=10.0, wave_ft=4.0, fog=0.45, wind_dir="NW")
 COMPASS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"]
 # sane physical ranges; anything outside is a sensor glitch, treated as missing
@@ -60,15 +61,22 @@ def _age_h(r, now):
     return (now - t).total_seconds() / 3600.0
 
 
-def _station(station, timeout):
-    """Newest non-missing value per field from one station's realtime file."""
-    raw = urllib.request.urlopen(BASE % station, timeout=timeout).read(MAX_BYTES)
+def _station(station, timeout, at=None):
+    """Newest non-missing value per field from one station's realtime file; or, given a
+    moment (aware datetime), the newest as of then. The file goes back 45 days."""
+    raw = urllib.request.urlopen(BASE % station, timeout=timeout).read(MAX_BYTES if at is None else MAX_BYTES_PAST)
     rows = raw.decode("ascii", "replace").splitlines()
     hdr = rows[0].lstrip("#").split()
-    out, now = {}, _now()
-    for line in rows[2:2 + LOOKBACK_ROWS]:          # rows[1] is the units row
+    out, now = {}, at or _now()
+    used = 0
+    for line in rows[2:]:                           # rows[1] is the units row
+        if used >= LOOKBACK_ROWS:
+            break
         r = dict(zip(hdr, line.split()))
         age = _age_h(r, now)
+        if at is not None and age is not None and age < 0:
+            continue                                # later than the moment asked about
+        used += 1
         if age is None:
             continue                                # a garbled line says nothing about the next
         if age > MAX_AGE_H:
@@ -91,11 +99,16 @@ def _fog_from(obs):
     return None
 
 
-def fetch(timeout=10):
+def fetch(timeout=10, at=None):
+    """Conditions now, or at a past moment (ISO string or datetime, this machine's clock)."""
+    if at is not None:
+        if isinstance(at, str):
+            at = datetime.datetime.fromisoformat(at)
+        at = at.astimezone(datetime.timezone.utc)
     wx = dict(DEFAULT)
     src = dict(wind="default", wave="default", fog="default")
     try:
-        home = _station(HOME, timeout)
+        home = _station(HOME, timeout, *([at] if at else []))
     except Exception:
         home = {}
     if home.get("WSPD") is not None:
@@ -110,7 +123,7 @@ def fetch(timeout=10):
     else:
         for st in NEIGHBOURS:                       # only when the home buoy can't say
             try:
-                fog = _fog_from(_station(st, min(timeout, 8)))
+                fog = _fog_from(_station(st, min(timeout, 8), *([at] if at else [])))
             except Exception:
                 fog = None
             if fog is not None:

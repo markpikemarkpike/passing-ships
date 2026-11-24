@@ -30,7 +30,7 @@ No photos, no stock art, no generative image model. The paintings are procedural
 
 ![Three paintings as the program draws them: a container ship, a research vessel and a sailboat](docs/recent.jpg)
 
-- **Shape.** Fifteen kinds of vessel, from container ship to Coast Guard cutter to a tug with a barge on a towline. The research ship gets a gantry on the stern because research ships have one.
+- **Shape.** Sixteen kinds of vessel, from container ship to Coast Guard cutter to cable layer to a tug with a barge on a towline. The research ship gets a gantry on the stern because research ships have one.
 - **Colors.** ONE's magenta, Maersk's blue, Matson's navy. Container stacks are a mixed pile, because carriers lease most of their boxes. Even Maersk.
 - **Load.** Ships broadcast how deep they sit. An empty one rides high and shows its bottom paint.
 - **Age.** Older hulls get rust.
@@ -218,11 +218,15 @@ panel.py         drives the e-ink
 config.py        reads ~/.curator/config.env
 fleet.py         paints every kind of ship in every kind of weather, and grades them
 test_fixes.py    the checks. Run them after any change.
+ports.py         destinations a person can read
+layout.py        where she sits in the picture
+backfill.py      paints days the frame was unplugged, from the radio's diary
 setup/           installers
-radio/           services for the radio Pi
+radio/           services for the radio Pi, and its own 30-day diary (passages.py)
+alerts/          optional: a heartbeat, and a GitHub workflow that tells you when it stops
 ```
 
-The curator has a variety rule: never the same ship twice in three days, favor the unusual passer, and don't let the box ships hog the wall.
+The curator hangs ships you could actually have seen first, by daylight where it can. A ship below the horizon is captioned HEARD, not SPOTTED. Then it has a variety rule: never the same ship twice in three days, favor the unusual passer, and don't let the box ships hog the wall.
 
 ## Security and privacy
 

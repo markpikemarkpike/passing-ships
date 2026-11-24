@@ -42,6 +42,7 @@ GENERIC = {
     "carcarrier": dict(hull=WHITE, boot=(0.16, 0.19, 0.27), house=WHITE, funnel=WHITE, band=None),
     "cruise":     dict(hull=WHITE, boot=NAVY, house=WHITE, funnel=WHITE, band=None),
     "research":   dict(hull=(0.16, 0.32, 0.62), boot=RUST, house=WHITE, funnel=WHITE, band=None),
+    "cable":      dict(hull=(0.16, 0.24, 0.45), boot=RUST, house=WHITE, funnel=(0.20, 0.44, 0.48), band=None),
     "tug":        dict(hull=BLACK_HULL, boot=(0.78, 0.30, 0.20), house=WHITE, funnel=(0.13, 0.12, 0.14), band=None),
     "atb":        dict(hull=BLACK_HULL, boot=(0.78, 0.30, 0.20), house=WHITE, funnel=(0.13, 0.12, 0.14), band=None),
     "workboat":   dict(hull=BLACK_HULL, boot=(0.78, 0.30, 0.20), house=WHITE, funnel=(0.13, 0.12, 0.14), band=None),
@@ -110,6 +111,8 @@ _CAR_CARRIERS = [
     (("TITANIA", "TITUS", "TAMESIS", "TALISMAN", "MORNING", "EUKOR", "WALLENIUS", "WILHELMSEN", "TIRRANNA", "TARAGO"),
      dict(hull=(0.24, 0.48, 0.44), band=WHITE, funnel=WHITE),
      "Wallenius Wilhelmsen / EUKOR: teal-green hull"),
+    (("SAIC ANJI",), dict(hull=WHITE, band=(0.24, 0.56, 0.36), funnel=WHITE), "SAIC Anji: white with green and navy"),
+    (("RCC ", "MORNING LUCY", "MORNING PROSPERITY"), dict(), "car carriers by name; colours not checked"),
     (("HOEGH", "HÖEGH"), dict(hull=(0.13, 0.20, 0.42), band=(0.78, 0.20, 0.16), funnel=WHITE),
      "Hoegh Autoliners: dark blue hull, red band"),
 ]
@@ -141,6 +144,16 @@ _RESEARCH = [
     (("FALKOR",), dict(hull=WHITE, boot=(0.13, 0.28, 0.55), house=WHITE, funnel=(0.13, 0.28, 0.55)),
      "Schmidt Ocean Falkor: white with blue"),
 ]
+# ---------------- cable ships (found by name: AIS has no code for them) ----------------
+_CABLE = [
+    (("CABLE INNOVATOR",), dict(hull=(0.78, 0.16, 0.16), boot=(0.62, 0.14, 0.14), house=WHITE, funnel=(0.16, 0.30, 0.36)),
+     "Cable Innovator: red hull, white upperworks, dark teal stacks (as photographed Oct-Dec 2024; blue before that)"),
+    (("ILE DE SEIN",), dict(hull=(0.13, 0.25, 0.50), boot=(0.62, 0.20, 0.18), house=(0.90, 0.84, 0.66), funnel=(0.90, 0.84, 0.66)),
+     "Ile de Sein (Alcatel Submarine Networks): blue hull, cream upperworks; broadcast as cargo, hung as a bulk carrier four times"),
+    (("CABLE VENTURE", "CABLE VIGILANCE", "WAVE SENTINEL", "WAVE VENTURE", "GLOBAL SENTINEL", "RENE DESCARTES",
+      "PIERRE DE FERMAT", "KDDI CABLE INFINITY", "KDDI OCEAN LINK"), dict(),
+     "other cable ships: known by name, colours not checked, so the generic"),
+]
 # ---------------- tugs & the fuel run ----------------
 _TUGS = [
     (("FOSS",), dict(hull=(0.13, 0.36, 0.24), house=WHITE, funnel=(0.13, 0.36, 0.24), band=WHITE),
@@ -151,27 +164,58 @@ _TUGS = [
      "Harley Marine / Centerline: white house, red-and-blue stacks"),
 ]
 # ---------------- tanker owners with a real look ----------------
+# Checked against photographs Nov 23 2026, each in at least two pictures that agree; where they did
+# not (VS Protector, Chem Stellar, both repainted) she is left out and keeps her own dice. Hull and house
+# are as seen; a funnel is named only where it could be made out.
+_RED_FUNNEL, _BLACK, _RED_HULL = (0.78, 0.20, 0.16), (0.13, 0.12, 0.14), (0.68, 0.17, 0.17)
 _TANKERS = [
-    (("POLAR ",), dict(hull=(0.20, 0.32, 0.62), house=WHITE, funnel=WHITE, band=(0.78, 0.20, 0.16)),
-     "Polar Tankers (Alaska crude): blue hull"),
-    (("OVERSEAS",), dict(hull=BLACK_HULL, house=WHITE, funnel=(0.13, 0.20, 0.42), band=(0.78, 0.20, 0.16)),
-     "OSG: black hull, blue funnel with red"),
-    (("CHEVRON", "TEXACO"), dict(hull=BLACK_HULL, house=WHITE, funnel=WHITE, band=(0.13, 0.20, 0.42)),
-     "Chevron shipping: black hull, white funnel with the blue chevron band"),
+    (("POLAR ",), dict(hull=(0.20, 0.32, 0.62), house=WHITE, funnel=_BLACK, band=WHITE),
+     "Polar Tankers (Alaska crude): the blue hull, black stacks with white"),
+    (("OVERSEAS",), dict(hull=BLACK_HULL, house=WHITE, funnel=(0.16, 0.30, 0.60), band=WHITE),
+     "OSG: dark hull, blue funnel with white"),
+    (("ALASKAN ",), dict(hull=BLACK_HULL, house=WHITE, funnel=(0.16, 0.30, 0.60), band=None),
+     "Alaska Tanker Company: black hull, red bottom, blue stacks"),
+    (("CHEVRON", "TEXACO", " VOYAGER"), dict(hull=BLACK_HULL, house=WHITE, funnel=WHITE, band=(0.13, 0.20, 0.42)),
+     "Chevron shipping (-VOYAGER names): black hull, white funnel with the blue chevron band"),
+    (("SUNSHINE STATE", "PELICAN STATE", "EMPIRE STATE", "MAGNOLIA STATE", "GOLDEN STATE", "GARDEN STATE", "BAY STATE",
+      "AMERICAN ENDURANCE", "AMERICAN FREEDOM", "AMERICAN LIBERTY", "AMERICAN PRIDE"),
+     dict(hull=BLACK_HULL, boot=(0.60, 0.24, 0.20), house=WHITE, funnel=_RED_FUNNEL, band=_BLACK),
+     "American Petroleum Tankers: black hull, white house, red funnel with black"),
+    (("WEST VIRGINIA", "OHIO", "LOUISIANA", "TEXAS"), dict(hull=(0.14, 0.17, 0.30), house=WHITE, funnel=_RED_FUNNEL, band=WHITE),
+     "Crowley's state tankers: blue-black hull, white house, red funnel"),
+    (("NAVE ",), dict(hull=_RED_HULL, house=WHITE), "Navios tankers (NAVE names): the red hull"),
+    (("ARGENT ",), dict(hull=(0.78, 0.27, 0.18), house=WHITE), "MOL Chemical Tankers (ARGENT names): orange-red hull"),
+    (("MTM ",), dict(hull=BLACK_HULL, house=WHITE, funnel=_RED_FUNNEL, band=_BLACK), "MTM: black hull, red and black stacks"),
+    (("DEGU",), dict(hull=BLACK_HULL, house=BUFF, funnel=BUFF), "Degu: black hull, buff house"),
+    (("ANTIPOLIS", "AIFANOURIOS", "TABLE BAY"), dict(hull=BLACK_HULL, house=WHITE), "seen: black hull, red bottom, white house"),
+]
+_BULKERS = [
+    (("CSL ", "SHEILA ANN"), dict(hull=BLACK_HULL, boot=(0.66, 0.22, 0.18), house=WHITE, funnel=(0.80, 0.26, 0.16), band=WHITE),
+     "Canada Steamship Lines self-unloaders: black hull, white house, red funnel"),
+    (("NAVIOS ",), dict(hull=_RED_HULL, house=WHITE, funnel=(0.13, 0.20, 0.42), band=None), "Navios: the red hull"),
+    (("SAGA ",), dict(hull=(0.82, 0.32, 0.18), house=CREAM), "Saga Welco open-hatch ships: orange hull"),
+    (("UNION FUJI",), dict(hull=BLACK_HULL, house=BUFF, funnel=(0.88, 0.66, 0.22), band=_BLACK), "Union Fuji: buff house and cranes, yellow funnel"),
+    (("GENCO ", "CORESKY OL", "BELLE LUNE"), dict(hull=BLACK_HULL, house=WHITE), "seen: black hull, red bottom, white house"),
+]
+_GENERAL = [
+    (("ASIAN NAGA",), dict(hull=(0.18, 0.32, 0.62), house=(0.90, 0.84, 0.66)), "Asian Naga: blue hull, cream house"),
+    (("PELAGICA",), dict(hull=(0.13, 0.18, 0.36), house=WHITE, funnel=_RED_FUNNEL), "Pelagica: dark blue hull, red cranes"),
 ]
 OPERATORS = [row + (kind,) for kind, rows in (
     ("container", _BOX_LINES), ("carcarrier", _CAR_CARRIERS), ("cruise", _CRUISE_LINES),
-    ("research", _RESEARCH), ("tug", _TUGS), ("tanker", _TANKERS)) for row in rows]
+    ("research", _RESEARCH), ("cable", _CABLE), ("tug", _TUGS), ("tanker", _TANKERS),
+    ("bulk", _BULKERS), ("general", _GENERAL)) for row in rows]
 # Keys good enough to choose a colour once we know what kind of ship she is, but
 # too ordinary (or shared with another trade) to tell us the kind. NYK and MOL
 # names sail on box ships too; there are tankers called EVERGREEN STATE and
 # anything EXPRESS, and bulkers called MORNING anything.
 _COLOUR_ONLY = {"EVERGREEN", "EXPRESS", "HORIZON ", "MOLLER", "GEORGE II", "GEORGE III",
                 "HIGHWAY", " ACE", "MOL ", "LEADER", "AUTO ", "NYK ", "MORNING", "TITUS"}
-# painter type -> whose fleets she could belong to (bulkers and the rest: nobody's)
+# painter type -> whose fleets she could belong to
 _KIND = {"container": "container", "cargo": "container", "carcarrier": "carcarrier",
-         "cruise": "cruise", "passenger": "cruise", "research": "research",
-         "tug": "tug", "atb": "tug", "workboat": "tug", "tanker": "tanker"}
+         "cruise": "cruise", "passenger": "cruise", "research": "research", "cable": "cable",
+         "tug": "tug", "atb": "tug", "workboat": "tug", "tanker": "tanker",
+         "bulk": "bulk", "general": "general"}
 
 
 def has_word(name, *keys):

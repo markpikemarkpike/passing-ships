@@ -1,0 +1,33 @@
+# Goes in the PRIVATE archive repo as .github/workflows/watch.yml, with watch.py beside it
+# in .github/. Scheduled runs use the repo's own token, limited to reading code and writing issues.
+name: watch
+on:
+  schedule:
+    - cron: "41 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: Send yourself a test alert
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  issues: write
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - name: Read the heartbeat
+        run: |
+          gh api "repos/$GH_REPO/contents/.github/watch.py" -H "Accept: application/vnd.github.raw" > watch.py
+          gh api "repos/$GH_REPO/contents/status.json?ref=heartbeat" -H "Accept: application/vnd.github.raw" > status.json || true
+      - run: python3 watch.py status.json
+      - if: ${{ inputs.test }}
+        run: |
+          u=$(gh issue create --title "Passing Ships: test alert" --body "Only a test. If this reached you, alerts work." --assignee "$OWNER")
+          gh issue close "$u" --comment "Test over."

@@ -97,7 +97,7 @@ fi
 # config.py reads every key above; a malformed value falls back to its default.
 
 echo "== services"
-for unit in curator sightings; do
+for unit in curator sightings backfill; do
   sudo tee /etc/systemd/system/$unit.service >/dev/null <<EOF
 [Unit]
 Description=Passing Ships $unit
@@ -137,8 +137,19 @@ Persistent=false
 [Install]
 WantedBy=timers.target
 EOF
+sudo tee /etc/systemd/system/backfill.timer >/dev/null <<'EOF'
+[Unit]
+Description=Paint any day this frame missed, from the radio's diary
+
+[Timer]
+OnCalendar=*-*-* 00:08:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
 sudo systemctl daemon-reload
-sudo systemctl enable curator.timer sightings.timer
+sudo systemctl enable curator.timer sightings.timer backfill.timer
 
 echo "== done. Rebooting. First painting arrives on the hour; log: ~/.curator/log.txt"
 sudo reboot
